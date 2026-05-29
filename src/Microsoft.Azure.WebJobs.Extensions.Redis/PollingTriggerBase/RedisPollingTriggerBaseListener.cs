@@ -106,11 +106,24 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         /// <summary>
         /// Main loop thread.
         /// </summary>
-        private async Task Loop(CancellationToken cancellationToken)
+        internal async Task Loop(CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                await PollAsync(cancellationToken);
+                try
+                {
+                    await PollAsync(cancellationToken);
+                }
+                catch (Exception e)
+                {
+                    // A transient failure (e.g. a dropped Redis connection or command timeout) must not be
+                    // allowed to escape the loop. Because this task is started fire-and-forget, an unhandled
+                    // exception here ends the loop and silently stops the listener for the remaining lifetime
+                    // of the host process, with no further log output. Log and continue so the listener
+                    // resumes on the next poll once the multiplexer reconnects.
+                    logger?.LogError(e, $"{logPrefix} Exception while polling; listener will continue polling.");
+                }
+
                 await Task.Delay(pollingInterval);
             }
         }
