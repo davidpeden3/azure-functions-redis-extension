@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 
@@ -34,6 +35,11 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
         internal const string Redis60 = "/redis/redis-6.0.20";
         internal const string Redis62 = "/redis/redis-6.2.14";
         internal const string Redis70 = "/redis/redis-7.0.14";
+
+        // Environment variables that override where the harness finds its tools. Set them when the tool is
+        // installed somewhere the test runner's PATH does not reach, which is common under an IDE.
+        internal const string FunctionsCoreToolsVariable = "AZURE_FUNCTIONS_CORE_TOOLS";
+        internal const string RedisServerVariable = "REDIS_SERVER";
 
         internal static async Task<Process> StartFunctionAsync(string functionName, int port, bool managedIdentity = false)
         {
@@ -100,12 +106,23 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             return functionsProcess;
         }
 
+        /// <summary>
+        /// Whether the exact Redis build at <paramref name="versionPath"/> is present. Tests whose assertions
+        /// depend on a specific server version skip when it is not. Every other test runs against whichever
+        /// server <see cref="StartRedis"/> resolves.
+        /// </summary>
+        internal static bool HasRedisBuild(string versionPath)
+        {
+            // On Windows the build lives inside WSL, where this process cannot see it.
+            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || File.Exists(GetRedisBuildFileName(versionPath));
+        }
+
         internal static Process StartRedis(string versionPath)
         {
             ProcessStartInfo info = new ProcessStartInfo
             {
-                FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? @"C:\Windows\System32\wsl.exe" : $"{versionPath}/src/redis-server",
-                Arguments = $"{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"{versionPath}/src/redis-server " : "")}--port 6379 --notify-keyspace-events AKE",
+                FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? @"C:\Windows\System32\wsl.exe" : GetRedisServerFileName(versionPath),
+                Arguments = $"{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? $"{GetRedisBuildFileName(versionPath)} " : "")}--port {redisPort} --notify-keyspace-events AKE",
                 WindowStyle = ProcessWindowStyle.Hidden,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -137,7 +154,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
         internal static void StopRedis(Process redis)
         {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 redis.Kill();
             }
@@ -180,16 +197,77 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             new DirectoryInfo(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName,
             "host.json")).Build();
 
+        // The port every spawned server listens on, taken from the connection string the functions use so
+        // the two can never disagree. It is deliberately not 6379. A Redis already running on the
+        // developer's machine is never in the way.
+        private static readonly int redisPort = GetRedisPort();
+
+        private static int GetRedisPort()
+        {
+            ConfigurationOptions options = ConfigurationOptions.Parse(localsettings.GetSection("ConnectionStrings")[ConnectionString]);
+            switch (options.EndPoints.Single())
+            {
+                case DnsEndPoint dnsEndPoint:
+                    return dnsEndPoint.Port;
+                case IPEndPoint ipEndPoint:
+                    return ipEndPoint.Port;
+                default:
+                    throw new InvalidOperationException($"The '{ConnectionString}' connection string in local.settings.json does not name a host and port.");
+            }
+        }
+
+        private static string GetRedisBuildFileName(string versionPath)
+        {
+            return $"{versionPath}/src/redis-server";
+        }
+
+        /// <summary>
+        /// The exact build when it is present, otherwise the server named by the <c>REDIS_SERVER</c>
+        /// environment variable, otherwise the first <c>redis-server</c> on the PATH.
+        /// </summary>
+        private static string GetRedisServerFileName(string versionPath)
+        {
+            string build = GetRedisBuildFileName(versionPath);
+            if (File.Exists(build))
+            {
+                return build;
+            }
+
+            return ResolveTool("redis-server", RedisServerVariable, build);
+        }
+
         private static string GetFunctionsFileName()
         {
-            string filepath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                 ? GetWindowsFunctionsFilePath()
-                : @"/usr/bin/func"; 
-            if (!File.Exists(filepath))
+                : ResolveTool("func", FunctionsCoreToolsVariable, "/usr/bin/func");
+        }
+
+        private static string ResolveTool(string fileName, string variable, string conventionalPath)
+        {
+            string overridePath = Environment.GetEnvironmentVariable(variable);
+            if (!string.IsNullOrWhiteSpace(overridePath))
             {
-                throw new FileNotFoundException($"Azure Functions Core Tools not found at {filepath}");
+                if (!File.Exists(overridePath))
+                {
+                    throw new FileNotFoundException($"{variable} is set to '{overridePath}', which does not exist.");
+                }
+                return overridePath;
             }
-            return filepath;
+
+            string[] directories = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator);
+            string onPath = directories.Select(directory => Path.Combine(directory, fileName)).FirstOrDefault(File.Exists);
+            if (onPath != null)
+            {
+                return onPath;
+            }
+
+            if (File.Exists(conventionalPath))
+            {
+                return conventionalPath;
+            }
+
+            throw new FileNotFoundException($"'{fileName}' was not found on the PATH or at '{conventionalPath}'. Install it, add it to the PATH or set {variable} to its location.");
         }
 
         private static string GetWindowsFunctionsFilePath()

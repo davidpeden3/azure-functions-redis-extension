@@ -104,7 +104,7 @@ $@"{{
             Assert.Equal(expectedTarget, scaleStatus.TargetWorkerCount);
         }
 
-        [Theory]
+        [SkippableTheory]
         [InlineData(IntegrationTestHelpers.Redis60, 100, 0)]
         [InlineData(IntegrationTestHelpers.Redis60, 0, 100)]
         [InlineData(IntegrationTestHelpers.Redis62, 100, 0)]
@@ -114,6 +114,7 @@ $@"{{
         [InlineData(IntegrationTestHelpers.Redis70, 0, 100)]
         public async Task RedisStreamTrigger_SomeElementsProcessed_CalculatesUnprocessedExactly(string redisVersion, int processed, int unprocessed)
         {
+            Skip.IfNot(IntegrationTestHelpers.HasRedisBuild(redisVersion), $"The Redis build at {redisVersion} is not present and this theory asserts version-specific behaviour.");
             string functionName = nameof(StreamTrigger_Batch_String);
             TriggerMetadata triggerMetadata = new TriggerMetadata(JObject.Parse(streamTrigger));
             RedisScalerProvider.RedisPollingTriggerMetadata redisMetadata = JsonConvert.DeserializeObject<RedisScalerProvider.RedisPollingTriggerMetadata>(triggerMetadata.Metadata.ToString());
@@ -150,7 +151,7 @@ $@"{{
             Assert.Equal(unprocessed / IntegrationTestHelpers.BatchSize, scaleStatus.TargetWorkerCount);
         }
 
-        [Theory]
+        [SkippableTheory]
         [InlineData(IntegrationTestHelpers.Redis60, 75, 25)]
         [InlineData(IntegrationTestHelpers.Redis60, 50, 50)]
         [InlineData(IntegrationTestHelpers.Redis60, 25, 75)]
@@ -159,6 +160,7 @@ $@"{{
         [InlineData(IntegrationTestHelpers.Redis62, 25, 75)]
         public async Task RedisStreamTrigger_CustomIdCounter_ReturnsValidScaleStatus(string redisVersion, int processed, int unprocessed)
         {
+            Skip.IfNot(IntegrationTestHelpers.HasRedisBuild(redisVersion), $"The Redis build at {redisVersion} is not present and this theory asserts version-specific behaviour.");
             string functionName = nameof(StreamTrigger_Batch_String);
             TriggerMetadata triggerMetadata = new TriggerMetadata(JObject.Parse(streamTrigger));
             RedisScalerProvider.RedisPollingTriggerMetadata redisMetadata = JsonConvert.DeserializeObject<RedisScalerProvider.RedisPollingTriggerMetadata>(triggerMetadata.Metadata.ToString());
