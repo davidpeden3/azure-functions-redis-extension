@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Microsoft.Azure.WebJobs.Extensions.Redis
@@ -22,7 +24,10 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         internal readonly ILoggerFactory loggerFactory;
         internal readonly AzureComponentFactory azureComponentFactory;
 
-        internal static readonly ConcurrentDictionary<string, IConnectionMultiplexer> connectionMultiplexerCache = new ConcurrentDictionary<string, IConnectionMultiplexer>();
+        // Each entry is a lazily-started connect shared by every trigger and binding on the same connection.
+        // Caching the multiplexer itself (check-then-act) let every listener that started concurrently on a
+        // cold host observe an empty cache and open its own connection, keeping one and orphaning the rest.
+        internal static readonly ConcurrentDictionary<string, Lazy<Task<IConnectionMultiplexer>>> connectionMultiplexerCache = new ConcurrentDictionary<string, Lazy<Task<IConnectionMultiplexer>>>();
 
         /// <summary>
         /// Adds Redis triggers and bindings to the extension context.
@@ -64,17 +69,25 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
 #pragma warning restore CS0618
         }
 
-        internal static async Task<IConnectionMultiplexer> GetOrCreateConnectionMultiplexerAsync(IConfiguration configuration, AzureComponentFactory componentFactory, string connection, string clientName)
+        internal static Task<IConnectionMultiplexer> GetOrCreateConnectionMultiplexerAsync(IConfiguration configuration, AzureComponentFactory componentFactory, string connection, string clientName)
         {
-            if (connectionMultiplexerCache.ContainsKey(connection))
+            return GetOrCreateConnectionMultiplexerAsync(connection, () => CreateConnectionMultiplexerAsync(configuration, componentFactory, connection, clientName));
+        }
+
+        internal static async Task<IConnectionMultiplexer> GetOrCreateConnectionMultiplexerAsync(string connection, Func<Task<IConnectionMultiplexer>> connectionMultiplexerFactory)
+        {
+            Lazy<Task<IConnectionMultiplexer>> lazyConnectionMultiplexer = connectionMultiplexerCache.GetOrAdd(connection, _ => new Lazy<Task<IConnectionMultiplexer>>(connectionMultiplexerFactory, LazyThreadSafetyMode.ExecutionAndPublication));
+            try
             {
-                connectionMultiplexerCache.TryGetValue(connection, out IConnectionMultiplexer connectionMultiplexer);
-                return connectionMultiplexer;
+                return await lazyConnectionMultiplexer.Value;
             }
-            else
+            catch
             {
-                IConnectionMultiplexer connectionMultiplexer = await CreateConnectionMultiplexerAsync(configuration, componentFactory, connection, clientName);
-                return connectionMultiplexerCache.GetOrAdd(connection, connectionMultiplexer);
+                // A failed connect must not be cached. Every later caller would otherwise receive the same faulted
+                // task for the lifetime of the process. Remove only this entry so that a caller that raced in
+                // behind a replacement does not evict the replacement.
+                ((ICollection<KeyValuePair<string, Lazy<Task<IConnectionMultiplexer>>>>)connectionMultiplexerCache).Remove(new KeyValuePair<string, Lazy<Task<IConnectionMultiplexer>>>(connection, lazyConnectionMultiplexer));
+                throw;
             }
         }
 
