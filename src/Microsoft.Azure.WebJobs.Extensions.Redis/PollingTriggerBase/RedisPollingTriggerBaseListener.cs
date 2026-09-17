@@ -32,6 +32,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         internal string logPrefix;
         internal Version serverVersion;
         internal RedisPollingTriggerBaseScaleMonitor scaleMonitor;
+        internal CancellationTokenSource stopTokenSource;
 
         public RedisPollingTriggerBaseListener(string name, IConfiguration configuration, AzureComponentFactory azureComponentFactory, string connection, string key, TimeSpan pollingInterval, int maxBatchSize, bool batch, ITriggeredFunctionExecutor executor, ILogger logger)
         {
@@ -50,13 +51,27 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         /// <summary>
         /// Executes enabled functions, primary listener method.
         /// </summary>
+        /// <remarks>
+        /// Any failure before the polling loop starts is thrown rather than hidden. The host wraps every listener
+        /// in a FunctionListener that retries a failed start with exponential backoff. A listener whose start
+        /// fails is therefore retried until it succeeds rather than staying dead for the lifetime of the host process.
+        /// </remarks>
         public virtual async Task StartAsync(CancellationToken cancellationToken)
         {
             multiplexer = await RedisExtensionConfigProvider.GetOrCreateConnectionMultiplexerAsync(configuration, azureComponentFactory, connection, name);
             logger?.LogInformation($"{logPrefix} Connecting to Redis.");
+            if (!multiplexer.IsConnected)
+            {
+                // With abortConnect=false the multiplexer is returned before a connection exists and reconnects in
+                // the background. Reading the server version from an unconnected endpoint yields the configured
+                // default rather than the real version. Fail the start and let the host retry it.
+                throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, $"{logPrefix} Redis is not connected.");
+            }
+
             serverVersion = multiplexer.GetServers()[0].Version;
-            BeforePolling();
-            _ = Task.Run(() => Loop(cancellationToken));
+            await BeforePollingAsync();
+            stopTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _ = Task.Run(() => Loop(stopTokenSource.Token));
         }
 
         /// <summary>
@@ -64,16 +79,19 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         /// </summary>
         public async Task StopAsync(CancellationToken cancellationToken)
         {
+            stopTokenSource?.Cancel();
             await CloseMultiplexerAsync(multiplexer);
         }
 
         public async void Cancel()
         {
+            stopTokenSource?.Cancel();
             await CloseMultiplexerAsync(multiplexer);
         }
 
         public async void Dispose()
         {
+            stopTokenSource?.Cancel();
             await CloseMultiplexerAsync(multiplexer);
         }
 
@@ -90,8 +108,12 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
 
         /// <summary>
         /// Any Redis commands necessary to run after the connection is created but before the polling starts.
+        /// A failure thrown from here fails the start of the listener so that the host retries it.
         /// </summary>
-        public virtual void BeforePolling() { }
+        public virtual Task BeforePollingAsync()
+        {
+            return Task.CompletedTask;
+        }
 
         /// <summary>
         /// Implementation of the logic used to poll the cache.

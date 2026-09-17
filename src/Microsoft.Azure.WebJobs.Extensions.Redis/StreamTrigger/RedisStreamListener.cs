@@ -27,7 +27,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
             this.entriesReadKey = RedisScalerProvider.GetFunctionScalerId(name, RedisUtilities.RedisStreamTrigger, key);
         }
 
-        public override async void BeforePolling()
+        public override async Task BeforePollingAsync()
         {
             IDatabase db = multiplexer.GetDatabase();
             try
