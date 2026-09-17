@@ -215,7 +215,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
         private static string GetPrefix()
         {
-            return Path.Combine("bin", "Debug", "net6.0");
+            return Path.Combine("bin", "Debug", "net8.0");
         }
 
         internal static string GetLogValue(object value)
