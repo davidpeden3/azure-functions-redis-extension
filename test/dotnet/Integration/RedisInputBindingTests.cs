@@ -36,7 +36,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
                     await multiplexer.CloseAsync();
                     IntegrationTestHelpers.StopRedis(redisProcess);
-                    functionsProcess.Kill();
+                    functionsProcess.Kill(entireProcessTree: true);
                 };
                 var incorrect = counts.Where(pair => pair.Value != 0);
                 Assert.False(incorrect.Any(), JsonConvert.SerializeObject(incorrect));
@@ -67,7 +67,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
                     await multiplexer.CloseAsync();
                     IntegrationTestHelpers.StopRedis(redisProcess);
-                    functionsProcess.Kill();
+                    functionsProcess.Kill(entireProcessTree: true);
                 };
                 var incorrect = counts.Where(pair => pair.Value != 0);
                 Assert.False(incorrect.Any(), JsonConvert.SerializeObject(incorrect));
@@ -96,7 +96,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
                 await multiplexer.CloseAsync();
                 IntegrationTestHelpers.StopRedis(redisProcess);
-                functionsProcess.Kill();
+                functionsProcess.Kill(entireProcessTree: true);
             };
             var incorrect = counts.Where(pair => pair.Value != 0);
             Assert.False(incorrect.Any(), JsonConvert.SerializeObject(incorrect));

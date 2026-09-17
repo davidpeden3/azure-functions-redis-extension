@@ -114,7 +114,7 @@ $@"{{
         [InlineData(IntegrationTestHelpers.Redis70, 0, 100)]
         public async Task RedisStreamTrigger_SomeElementsProcessed_CalculatesUnprocessedExactly(string redisVersion, int processed, int unprocessed)
         {
-            Skip.IfNot(IntegrationTestHelpers.HasRedisBuild(redisVersion), $"The Redis build at {redisVersion} is not present and this theory asserts version-specific behaviour.");
+            Skip.IfNot(IntegrationTestHelpers.HasRedisBuild(redisVersion), $"No Redis server in the version band of {redisVersion} is available and this theory asserts behaviour specific to that band.");
             string functionName = nameof(StreamTrigger_Batch_String);
             TriggerMetadata triggerMetadata = new TriggerMetadata(JObject.Parse(streamTrigger));
             RedisScalerProvider.RedisPollingTriggerMetadata redisMetadata = JsonConvert.DeserializeObject<RedisScalerProvider.RedisPollingTriggerMetadata>(triggerMetadata.Metadata.ToString());
@@ -133,7 +133,7 @@ $@"{{
 
                 Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071);
                 await Task.Delay(TimeSpan.FromMilliseconds(2 * processed / IntegrationTestHelpers.BatchSize * IntegrationTestHelpers.PollingIntervalShort));
-                functionsProcess.Kill();
+                functionsProcess.Kill(entireProcessTree: true);
 
                 foreach (int value in Enumerable.Range(processed, unprocessed))
                 {
@@ -160,7 +160,7 @@ $@"{{
         [InlineData(IntegrationTestHelpers.Redis62, 25, 75)]
         public async Task RedisStreamTrigger_CustomIdCounter_ReturnsValidScaleStatus(string redisVersion, int processed, int unprocessed)
         {
-            Skip.IfNot(IntegrationTestHelpers.HasRedisBuild(redisVersion), $"The Redis build at {redisVersion} is not present and this theory asserts version-specific behaviour.");
+            Skip.IfNot(IntegrationTestHelpers.HasRedisBuild(redisVersion), $"No Redis server in the version band of {redisVersion} is available and this theory asserts behaviour specific to that band.");
             string functionName = nameof(StreamTrigger_Batch_String);
             TriggerMetadata triggerMetadata = new TriggerMetadata(JObject.Parse(streamTrigger));
             RedisScalerProvider.RedisPollingTriggerMetadata redisMetadata = JsonConvert.DeserializeObject<RedisScalerProvider.RedisPollingTriggerMetadata>(triggerMetadata.Metadata.ToString());
@@ -179,7 +179,7 @@ $@"{{
 
                 Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071);
                 await Task.Delay(TimeSpan.FromMilliseconds(2 * processed / IntegrationTestHelpers.BatchSize * IntegrationTestHelpers.PollingIntervalShort));
-                functionsProcess.Kill();
+                functionsProcess.Kill(entireProcessTree: true);
 
                 foreach (int value in Enumerable.Range(processed, unprocessed))
                 {
