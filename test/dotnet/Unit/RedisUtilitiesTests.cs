@@ -32,7 +32,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
         {
             ConfigurationOptions options = await RedisUtilities.ResolveConfigurationOptionsAsync(localsettings, null, "redisConnectionString", "test");
             Assert.Single(options.EndPoints);
-            Assert.Equal("127.0.0.1:6379", options.EndPoints[0].ToString());
+            Assert.Equal("127.0.0.1:16379", options.EndPoints[0].ToString());
         }
 
         [Fact]
