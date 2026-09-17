@@ -54,6 +54,14 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         {
             multiplexer = await RedisExtensionConfigProvider.GetOrCreateConnectionMultiplexerAsync(configuration, azureComponentFactory, connection, name);
             logger?.LogInformation($"{logPrefix} Connecting to Redis.");
+            if (!multiplexer.IsConnected)
+            {
+                // With abortConnect=false the multiplexer is returned before a connection exists and reconnects in
+                // the background. Reading the server version from an unconnected endpoint yields the configured
+                // default rather than the real version. Fail the start and let the host retry it.
+                throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, $"{logPrefix} Redis is not connected.");
+            }
+
             serverVersion = multiplexer.GetServers()[0].Version;
             BeforePolling();
             _ = Task.Run(() => Loop(cancellationToken));
