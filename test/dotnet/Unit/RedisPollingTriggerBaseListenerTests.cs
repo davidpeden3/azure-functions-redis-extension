@@ -31,19 +31,51 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
                 }
 
                 return Task.CompletedTask;
-            }, A.Fake<ILogger>());
+            });
 
             await listener.Loop(cancellationTokenSource.Token);
 
-            Assert.True(polls >= 3, $"Expected the loop to keep polling after an exception, but it polled {polls} time(s).");
+            Assert.True(polls >= 3, $"Expected the loop to keep polling after an exception. It polled {polls} time(s).");
+        }
+
+        [Fact]
+        public async Task Loop_Stops_WhenTheTokenIsCancelled()
+        {
+            using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+            int polls = 0;
+
+            CallbackPollingListener listener = new CallbackPollingListener(_ =>
+            {
+                polls++;
+                cancellationTokenSource.Cancel();
+                return Task.CompletedTask;
+            });
+
+            await listener.Loop(cancellationTokenSource.Token);
+
+            Assert.Equal(1, polls);
+        }
+
+        [Fact]
+        public async Task StopAsync_CancelsThePollingLoop()
+        {
+            CallbackPollingListener listener = new CallbackPollingListener(_ => Task.CompletedTask);
+            IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
+            A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
+            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, multiplexer);
+            await listener.StartAsync(CancellationToken.None);
+
+            await listener.StopAsync(CancellationToken.None);
+
+            Assert.True(listener.stopTokenSource.IsCancellationRequested);
         }
 
         private sealed class CallbackPollingListener : RedisPollingTriggerBaseListener
         {
             private readonly Func<CancellationToken, Task> onPoll;
 
-            public CallbackPollingListener(Func<CancellationToken, Task> onPoll, ILogger logger)
-                : base("name", null, null, "connection", "key", TimeSpan.FromMilliseconds(1), 1, false, null, logger)
+            public CallbackPollingListener(Func<CancellationToken, Task> onPoll)
+                : base("name", null, null, Guid.NewGuid().ToString(), "key", TimeSpan.FromMilliseconds(1), 1, false, null, A.Fake<ILogger>())
             {
                 this.onPoll = onPoll;
             }

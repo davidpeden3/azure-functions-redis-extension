@@ -32,6 +32,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         internal string logPrefix;
         internal Version serverVersion;
         internal RedisPollingTriggerBaseScaleMonitor scaleMonitor;
+        internal CancellationTokenSource stopTokenSource;
 
         public RedisPollingTriggerBaseListener(string name, IConfiguration configuration, AzureComponentFactory azureComponentFactory, string connection, string key, TimeSpan pollingInterval, int maxBatchSize, bool batch, ITriggeredFunctionExecutor executor, ILogger logger)
         {
@@ -56,7 +57,10 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
             logger?.LogInformation($"{logPrefix} Connecting to Redis.");
             serverVersion = multiplexer.GetServers()[0].Version;
             BeforePolling();
-            _ = Task.Run(() => Loop(cancellationToken));
+            // The token passed to StartAsync is the host's start token, which is never cancelled. Now that a
+            // failed poll no longer ends the loop, the listener needs its own signal to stop polling.
+            stopTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _ = Task.Run(() => Loop(stopTokenSource.Token));
         }
 
         /// <summary>
@@ -64,16 +68,19 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         /// </summary>
         public async Task StopAsync(CancellationToken cancellationToken)
         {
+            stopTokenSource?.Cancel();
             await CloseMultiplexerAsync(multiplexer);
         }
 
         public async void Cancel()
         {
+            stopTokenSource?.Cancel();
             await CloseMultiplexerAsync(multiplexer);
         }
 
         public async void Dispose()
         {
+            stopTokenSource?.Cancel();
             await CloseMultiplexerAsync(multiplexer);
         }
 
