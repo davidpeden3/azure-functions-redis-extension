@@ -49,7 +49,9 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         }
 
         /// <summary>
-        /// Executes enabled functions, primary listener method.
+        /// Connects to Redis, runs any commands the trigger needs before polling and starts the polling loop.
+        /// The loop polls on a token the listener owns and cancels from <see cref="StopAsync"/>, <see cref="Cancel"/>
+        /// and <see cref="Dispose"/>. The host's start token would never end it.
         /// </summary>
         public virtual async Task StartAsync(CancellationToken cancellationToken)
         {
@@ -57,8 +59,6 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
             logger?.LogInformation($"{logPrefix} Connecting to Redis.");
             serverVersion = multiplexer.GetServers()[0].Version;
             BeforePolling();
-            // The token passed to StartAsync is the host's start token, which is never cancelled. Now that a
-            // failed poll no longer ends the loop, the listener needs its own signal to stop polling.
             stopTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _ = Task.Run(() => Loop(stopTokenSource.Token));
         }
