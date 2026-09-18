@@ -94,7 +94,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
             logger?.LogDebug($"{logPrefix} Acknowledged {acknowledged} entries from the stream at key '{key}'.");
         }
 
-        public async override void BeforeClosing()
+        public override async Task BeforeClosingAsync()
         {
             IDatabase db = multiplexer.GetDatabase();
             logger?.LogInformation($"{logPrefix} Attempting to delete consumer name '{consumerName}' from the consumer group '{name}' for the stream at key '{key}'.");

@@ -35,6 +35,33 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
             await listener.StartAsync(CancellationToken.None);
         }
 
+        [Fact]
+        public async Task StopAsync_DeletesTheConsumerFromTheGroup()
+        {
+            IDatabase database = A.Fake<IDatabase>();
+            A.CallTo(database).WithReturnType<Task<bool>>().Where(call => call.Method.Name == nameof(IDatabase.StreamCreateConsumerGroupAsync))
+                .Returns(true);
+            A.CallTo(database).WithReturnType<Task<StreamEntry[]>>().Where(call => call.Method.Name == nameof(IDatabase.StreamReadGroupAsync))
+                .Returns(Array.Empty<StreamEntry>());
+            RedisStreamListener listener = CreateListener(database);
+            await listener.StartAsync(CancellationToken.None);
+
+            await listener.StopAsync(CancellationToken.None);
+
+            A.CallTo(() => database.StreamDeleteConsumerAsync("key", "name", listener.consumerName, A<CommandFlags>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [Fact]
+        public async Task StopAsync_DoesNothing_WhenTheListenerNeverStarted()
+        {
+            IDatabase database = A.Fake<IDatabase>();
+            RedisStreamListener listener = CreateListener(database);
+
+            await listener.StopAsync(CancellationToken.None);
+
+            A.CallTo(database).MustNotHaveHappened();
+        }
+
         private static RedisStreamListener CreateListener(IDatabase database)
         {
             string connection = Guid.NewGuid().ToString();
