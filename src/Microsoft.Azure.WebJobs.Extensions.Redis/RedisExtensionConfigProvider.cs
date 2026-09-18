@@ -27,6 +27,8 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         // Each entry is a lazily-started connect shared by every trigger and binding on the same connection.
         // Caching the multiplexer itself (check-then-act) let every listener that started concurrently on a
         // cold host observe an empty cache and open its own connection, keeping one and orphaning the rest.
+        // The cache owns every multiplexer it creates for the life of the process. Every trigger, scale monitor
+        // and binding on the same connection shares one. No consumer closes or disposes it.
         internal static readonly ConcurrentDictionary<string, Lazy<Task<IConnectionMultiplexer>>> connectionMultiplexerCache = new ConcurrentDictionary<string, Lazy<Task<IConnectionMultiplexer>>>();
 
         /// <summary>

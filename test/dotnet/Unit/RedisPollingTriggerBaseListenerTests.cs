@@ -32,10 +32,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
 
                 return Task.CompletedTask;
             });
-            IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
-            A.CallTo(() => multiplexer.IsConnected).Returns(true);
-            A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
-            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(multiplexer)));
+            SeedConnectedMultiplexer(listener.connection);
 
             await listener.StartAsync(CancellationToken.None);
             await thirdPoll.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -56,21 +53,71 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
                 firstPoll.TrySetResult(true);
                 return Task.CompletedTask;
             });
-            IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
-            A.CallTo(() => multiplexer.IsConnected).Returns(true);
-            A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
-            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(multiplexer)));
+            SeedConnectedMultiplexer(listener.connection);
             await listener.StartAsync(CancellationToken.None);
             await firstPoll.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
             await listener.StopAsync(CancellationToken.None);
 
-            // The loop checks the token before each poll and sleeps one polling interval between polls.
-            // A poll already in flight when StopAsync ran can therefore still land. After that, none may.
-            await Task.Delay(TimeSpan.FromMilliseconds(50));
+            Assert.True(listener.loopTask.IsCompleted);
             int pollsAfterStop = polls;
             await Task.Delay(TimeSpan.FromMilliseconds(50));
             Assert.Equal(pollsAfterStop, polls);
+        }
+
+        [Fact]
+        public async Task StopAsync_WaitsForThePollInFlight()
+        {
+            TaskCompletionSource<bool> pollStarted = new TaskCompletionSource<bool>();
+            TaskCompletionSource<bool> releasePoll = new TaskCompletionSource<bool>();
+
+            CallbackPollingListener listener = new CallbackPollingListener(async _ =>
+            {
+                pollStarted.TrySetResult(true);
+                await releasePoll.Task;
+            });
+            SeedConnectedMultiplexer(listener.connection);
+            await listener.StartAsync(CancellationToken.None);
+            await pollStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Task stop = listener.StopAsync(CancellationToken.None);
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+            Assert.False(stop.IsCompleted);
+
+            releasePoll.SetResult(true);
+            await stop.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        [Fact]
+        public async Task StopAsync_LeavesTheMultiplexerOpen()
+        {
+            CallbackPollingListener listener = new CallbackPollingListener(_ => Task.CompletedTask);
+            IConnectionMultiplexer multiplexer = SeedConnectedMultiplexer(listener.connection);
+            await listener.StartAsync(CancellationToken.None);
+
+            await listener.StopAsync(CancellationToken.None);
+
+            A.CallTo(() => multiplexer.CloseAsync(A<bool>._)).MustNotHaveHappened();
+            A.CallTo(() => multiplexer.DisposeAsync()).MustNotHaveHappened();
+        }
+
+        [Fact]
+        public async Task StopAsync_DoesNothing_WhenTheListenerNeverStarted()
+        {
+            CallbackPollingListener listener = new CallbackPollingListener(_ => Task.CompletedTask);
+
+            await listener.StopAsync(CancellationToken.None);
+
+            Assert.Null(listener.loopTask);
+        }
+
+        private static IConnectionMultiplexer SeedConnectedMultiplexer(string connection)
+        {
+            IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
+            A.CallTo(() => multiplexer.IsConnected).Returns(true);
+            A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
+            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(multiplexer)));
+            return multiplexer;
         }
 
         private sealed class CallbackPollingListener : RedisPollingTriggerBaseListener
