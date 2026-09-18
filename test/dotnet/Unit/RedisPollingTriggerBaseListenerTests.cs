@@ -34,7 +34,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
             });
             IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
             A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
-            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, multiplexer);
+            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(multiplexer)));
 
             await listener.StartAsync(CancellationToken.None);
             await thirdPoll.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -57,7 +57,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
             });
             IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
             A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
-            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, multiplexer);
+            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(multiplexer)));
             await listener.StartAsync(CancellationToken.None);
             await firstPoll.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
