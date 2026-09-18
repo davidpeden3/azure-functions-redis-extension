@@ -1,12 +1,14 @@
 ﻿using FakeItEasy;
+using Microsoft.Azure.WebJobs.Extensions.Redis;
 using Microsoft.Azure.WebJobs.Host.Scale;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using StackExchange.Redis;
 using System;
+using System.Threading.Tasks;
 using Xunit;
 
-namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
+namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Unit
 {
     public class RedisPollingTriggerBaseScaleMonitorTests
     {
@@ -106,7 +108,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
         }
 
         [Fact]
-        public async void RedisListTriggerScaleMonitor_DoesntThrowObjectDisposedException()
+        public async Task RedisListTriggerScaleMonitor_DoesntThrowObjectDisposedException()
         {
             string connection = "connection";
             IConnectionMultiplexer fakeMultiplexer = A.Fake<IConnectionMultiplexer>();
@@ -118,7 +120,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
         }
 
         [Fact]
-        public async void RedisStreamTriggerScaleMonitor_DoesntThrowObjectDisposedException()
+        public async Task RedisStreamTriggerScaleMonitor_DoesntThrowObjectDisposedException()
         {
             string connection = "connection";
             IConnectionMultiplexer fakeMultiplexer = A.Fake<IConnectionMultiplexer>();

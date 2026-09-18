@@ -1,12 +1,14 @@
+using Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Redis;
 using Microsoft.Extensions.Configuration;
 using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading.Tasks;
 using Xunit;
 
-namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
+namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Unit
 {
     public class RedisUtilitiesTests
     {
@@ -25,10 +27,10 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
             { "falseKey", "false" }
         }).Build();
 
-        private static IConfiguration localsettings = new ConfigurationBuilder().AddJsonFile(Path.Combine(new DirectoryInfo(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName, "local.settings.json")).Build();
+        private static IConfiguration localsettings = new ConfigurationBuilder().AddJsonFile(IntegrationTestHelpers.GetFunctionsFile("local.settings.json")).Build();
 
         [Fact]
-        public async void ResolveConfigurationOptionsAsync_ValidConnection_ReturnsResolvedString()
+        public async Task ResolveConfigurationOptionsAsync_ValidConnection_ReturnsResolvedString()
         {
             ConfigurationOptions options = await RedisUtilities.ResolveConfigurationOptionsAsync(localsettings, null, "redisConnectionString", "test");
             Assert.Single(options.EndPoints);
@@ -36,7 +38,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
         }
 
         [Fact]
-        public async void ResolveConfigurationOptionsAsync_ValidSetting_ReturnsResolvedString()
+        public async Task ResolveConfigurationOptionsAsync_ValidSetting_ReturnsResolvedString()
         {
 
             ConfigurationOptions options = await RedisUtilities.ResolveConfigurationOptionsAsync(testConfig, null, "CacheConnection", "test");

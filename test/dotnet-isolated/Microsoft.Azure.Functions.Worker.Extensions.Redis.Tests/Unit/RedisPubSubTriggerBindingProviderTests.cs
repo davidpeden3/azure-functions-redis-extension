@@ -1,4 +1,6 @@
 using FakeItEasy;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Redis;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -6,7 +8,7 @@ using System;
 using System.Threading.Tasks;
 using Xunit;
 
-namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
+namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Unit
 {
     public class RedisTriggerBindingProviderTests
     {

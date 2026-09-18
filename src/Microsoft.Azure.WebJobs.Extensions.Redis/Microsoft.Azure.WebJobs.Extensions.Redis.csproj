@@ -37,6 +37,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="StackExchange.Redis" Version="2.7.4" />
     <InternalsVisibleTo Include="Microsoft.Azure.WebJobs.Extensions.Redis.Tests" />
+    <InternalsVisibleTo Include="Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests" />
   </ItemGroup>
 
 </Project>
