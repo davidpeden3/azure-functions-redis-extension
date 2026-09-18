@@ -39,6 +39,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
         {
             string connection = Guid.NewGuid().ToString();
             IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
+            A.CallTo(() => multiplexer.IsConnected).Returns(true);
             A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
             A.CallTo(() => multiplexer.GetDatabase(A<int>._, A<object>._)).Returns(database);
             RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(multiplexer)));
