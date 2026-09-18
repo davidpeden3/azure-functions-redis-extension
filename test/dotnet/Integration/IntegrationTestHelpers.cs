@@ -71,7 +71,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             info.EnvironmentVariables["FUNCTIONS_RUNTIME_SCALE_MONITORING_ENABLED"] = "1";
             // Core Tools injects local.settings.json into the host's environment under this prefix and leaves
             // any variable that already exists alone. This keeps the host on the same server as the test.
-            info.EnvironmentVariables[$"ConnectionStrings:{ConnectionString}"] = redisConnectionString;
+            info.EnvironmentVariables[ConnectionString] = redisConnectionString;
             Process functionsProcess = new Process() { StartInfo = info };
 
             // The last lines the host wrote. A start that fails then says why instead of only that it did.
@@ -332,7 +332,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
         internal static IConfiguration localsettings = new ConfigurationBuilder()
             .AddJsonFile(GetTestProjectFile("local.settings.json"))
-            .AddInMemoryCollection(new Dictionary<string, string> { { $"ConnectionStrings:{ConnectionString}", redisConnectionString } })
+            .AddInMemoryCollection(new Dictionary<string, string> { { ConnectionString, redisConnectionString } })
             .Build();
 
         internal static IConfiguration hostsettings = new ConfigurationBuilder().AddJsonFile(GetTestProjectFile("host.json")).Build();
@@ -356,7 +356,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             }
 
             IConfiguration file = new ConfigurationBuilder().AddJsonFile(GetTestProjectFile("local.settings.json")).Build();
-            return file.GetSection("ConnectionStrings")[ConnectionString];
+            return file.GetSection("Values")[ConnectionString];
         }
 
         private static int GetRedisPort()
@@ -521,12 +521,6 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
         internal static string GetLogValue(object value)
         {
             return value.GetType().FullName + ":" + JsonConvert.SerializeObject(value);
-        }
-
-        internal class ScaleStatus
-        {
-            public int vote;
-            public int targetWorkerCount;
         }
 
         internal class ClientSecretCredentialComponentFactory : AzureComponentFactory

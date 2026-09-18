@@ -34,7 +34,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
                 ISubscriber subscriber = multiplexer.GetSubscriber();
 
-                subscriber.Publish(channel, message);
+                subscriber.Publish(RedisChannel.Literal(channel), message);
                 await Task.Delay(TimeSpan.FromSeconds(1));
 
                 await multiplexer.CloseAsync();
@@ -161,7 +161,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
                 ISubscriber subscriber = multiplexer.GetSubscriber();
 
-                subscriber.Publish(IntegrationTestHelpers.PubSubChannel, JsonSerializer.Serialize(new CustomType() { Field = "feeld", Name = "naim", Random = "ran" }));
+                subscriber.Publish(RedisChannel.Literal(IntegrationTestHelpers.PubSubChannel), JsonSerializer.Serialize(new CustomType() { Field = "feeld", Name = "naim", Random = "ran" }));
                 await Task.Delay(TimeSpan.FromSeconds(1));
 
                 await multiplexer.CloseAsync();

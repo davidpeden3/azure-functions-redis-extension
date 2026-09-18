@@ -102,7 +102,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 {
                     functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
 
-                    await multiplexer.GetSubscriber().PublishAsync(functionName, message);
+                    await multiplexer.GetSubscriber().PublishAsync(RedisChannel.Literal(functionName), message);
 
                     await Task.Delay(TimeSpan.FromSeconds(1));
 
