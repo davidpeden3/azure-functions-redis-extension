@@ -1,5 +1,4 @@
 using Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions;
-using Microsoft.Azure.WebJobs.Extensions.Redis;
 using Newtonsoft.Json;
 using StackExchange.Redis;
 using System;
@@ -31,7 +30,7 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
             };
 
             using (Process redisProcess = IntegrationTestHelpers.StartRedis())
-            using (ConnectionMultiplexer multiplexer = ConnectionMultiplexer.Connect(await RedisUtilities.ResolveConfigurationOptionsAsync(IntegrationTestHelpers.localsettings, null, TestFunctionHelpers.ConnectionString, "test")))
+            using (ConnectionMultiplexer multiplexer = await ConnectionMultiplexer.ConnectAsync(IntegrationTestHelpers.redisConnectionString))
             {
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
                 await multiplexer.GetDatabase().ListLeftPushAsync(functionName, entry);

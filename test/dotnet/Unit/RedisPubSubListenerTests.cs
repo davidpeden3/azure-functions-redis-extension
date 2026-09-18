@@ -1,18 +1,16 @@
 using FakeItEasy;
-using Microsoft.Azure.WebJobs.Extensions.Redis;
 using Microsoft.Azure.WebJobs.Host.Executors;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using System.Threading;
-using System.Threading.Tasks;
 using Xunit;
 
-namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Unit
+namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
 {
     public class RedisPubSubListenerTests
     {
         [Fact]
-        public async Task StopAsync_ClosesAndDisposesConnectionMultiplexer()
+        public async void StopAsync_ClosesAndDisposesConnectionMultiplexer()
         {
             IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
             RedisPubSubListener listener = new RedisPubSubListener("name", multiplexer, "channel", false, A.Fake<ITriggeredFunctionExecutor>(), A.Fake<ILogger>());

@@ -1,6 +1,5 @@
 using Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions;
-using Microsoft.Azure.WebJobs.Extensions.Redis;
-using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json.Linq;
 using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
@@ -40,12 +39,7 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
 
         // The connection string the tests and the Functions host share. The app's local.settings.json is the
         // default and REDIS_CONNECTION_STRING overrides it. One committed file serves every machine.
-        private static readonly string redisConnectionString = GetRedisConnectionString();
-
-        internal static IConfiguration localsettings = new ConfigurationBuilder()
-            .AddJsonFile(GetFunctionsFile("local.settings.json"))
-            .AddInMemoryCollection(new Dictionary<string, string> { { $"ConnectionStrings:{TestFunctionHelpers.ConnectionString}", redisConnectionString } })
-            .Build();
+        internal static readonly string redisConnectionString = GetRedisConnectionString();
 
         // The port a spawned server listens on, taken from the connection string so the two can never
         // disagree. It is deliberately not 6379. A Redis already running on the developer's machine is
@@ -193,12 +187,11 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
             functionsProcess.OutputDataReceived -= outputTailHandler;
             functionsProcess.ErrorDataReceived -= outputTailHandler;
 
-            // Ensure that the client name is correctly set
-            ConfigurationOptions options = await RedisUtilities.ResolveConfigurationOptionsAsync(localsettings, null, TestFunctionHelpers.ConnectionString, nameof(IntegrationTestHelpers));
-            options.AllowAdmin = true;
-            IConnectionMultiplexer multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
+            // The extension names the connection it opens for a trigger after the function. Its absence means the
+            // listener never started, whatever the host logged.
+            IConnectionMultiplexer multiplexer = await ConnectionMultiplexer.ConnectAsync(GetListeningRedisOptions());
             ClientInfo[] clients = multiplexer.GetServers()[0].ClientList();
-            if (!clients.Any(client => client.Name == RedisUtilities.GetRedisClientName(functionName)))
+            if (!clients.Any(client => client.Name == $"AzureFunctionsRedisExtension.{functionName}"))
             {
                 functionsProcess.Kill(entireProcessTree: true);
                 throw new Exception("Function client not found on redis server.");
@@ -297,8 +290,8 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
                 return overrideConnectionString;
             }
 
-            IConfiguration file = new ConfigurationBuilder().AddJsonFile(GetFunctionsFile("local.settings.json")).Build();
-            return file.GetSection("ConnectionStrings")[TestFunctionHelpers.ConnectionString];
+            JObject localSettings = JObject.Parse(File.ReadAllText(GetFunctionsFile("local.settings.json")));
+            return (string)localSettings["ConnectionStrings"][TestFunctionHelpers.ConnectionString];
         }
 
         private static int GetRedisPort()
