@@ -25,7 +25,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
             { "falseKey", "false" }
         }).Build();
 
-        private static IConfiguration localsettings = new ConfigurationBuilder().AddJsonFile(Path.Combine(new DirectoryInfo(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName, "local.settings.json")).Build();
+        private static IConfiguration localsettings = new ConfigurationBuilder().AddJsonFile(Path.Combine(new DirectoryInfo(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName, "local.settings.json")).Build().GetSection("Values");
 
         [Fact]
         public async void ResolveConfigurationOptionsAsync_ValidConnection_ReturnsResolvedString()

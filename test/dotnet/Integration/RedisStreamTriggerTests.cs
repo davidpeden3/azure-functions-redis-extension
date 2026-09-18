@@ -154,7 +154,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             using (ConnectionMultiplexer multiplexer = ConnectionMultiplexer.Connect(await RedisUtilities.ResolveConfigurationOptionsAsync(IntegrationTestHelpers.localsettings, null, IntegrationTestHelpers.ConnectionString, "test")))
             {
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
-                Task.WaitAll(Enumerable.Range(0, elements).Select(i => multiplexer.GetDatabase().StreamAddAsync(functionName, i, i)).ToArray());
+                await Task.WhenAll(Enumerable.Range(0, elements).Select(i => multiplexer.GetDatabase().StreamAddAsync(functionName, i, i)));
 
                 using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
                 {

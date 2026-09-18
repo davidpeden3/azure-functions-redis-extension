@@ -30,7 +30,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
                 {
                     functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-                    await multiplexer.GetSubscriber().PublishAsync(functionName, "start");
+                    await multiplexer.GetSubscriber().PublishAsync(RedisChannel.Literal(functionName), "start");
 
                     await Task.Delay(TimeSpan.FromSeconds(1));
 
@@ -61,7 +61,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
                 {
                     functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-                    await multiplexer.GetSubscriber().PublishAsync(functionName, "start");
+                    await multiplexer.GetSubscriber().PublishAsync(RedisChannel.Literal(functionName), "start");
 
                     await Task.Delay(TimeSpan.FromSeconds(1));
 
@@ -90,7 +90,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
                 functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
                 await multiplexer.GetDatabase().StringSetAsync(functionName, JsonConvert.SerializeObject(value));
-                await multiplexer.GetSubscriber().PublishAsync(functionName, "start");
+                await multiplexer.GetSubscriber().PublishAsync(RedisChannel.Literal(functionName), "start");
 
                 await Task.Delay(TimeSpan.FromSeconds(1));
 

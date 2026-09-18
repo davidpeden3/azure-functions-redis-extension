@@ -30,6 +30,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         /// <param name="configuration"></param>
         /// <param name="nameResolver"></param>
         /// <param name="loggerFactory"></param>
+        /// <param name="azureComponentFactory"></param>
         public RedisExtensionConfigProvider(IConfiguration configuration, INameResolver nameResolver, ILoggerFactory loggerFactory, AzureComponentFactory azureComponentFactory)
         {
             this.configuration = configuration;
