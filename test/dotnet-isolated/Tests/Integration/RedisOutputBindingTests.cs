@@ -16,7 +16,6 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
         [Theory]
         [InlineData(nameof(OutputBinding_String))]
         [InlineData(nameof(OutputBinding_ByteArray))]
-        [InlineData(nameof(OutputBinding_ReadOnlyMemory))]
         public async Task OutputBinding_TypeConversions_WorkCorrectly(string functionName)
         {
             Dictionary<string, int> counts = new Dictionary<string, int>

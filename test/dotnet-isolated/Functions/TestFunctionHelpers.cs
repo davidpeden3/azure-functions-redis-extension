@@ -21,8 +21,6 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions
                     return FormatLogValue(typeof(string), text);
                 case byte[] bytes:
                     return FormatLogValue(typeof(byte[]), Encoding.UTF8.GetString(bytes));
-                case ReadOnlyMemory<byte> memory:
-                    return FormatLogValue(typeof(ReadOnlyMemory<byte>), Encoding.UTF8.GetString(memory.Span));
                 default:
                     return FormatLogValue(value.GetType(), JsonConvert.SerializeObject(value));
             }

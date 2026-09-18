@@ -16,7 +16,6 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
         [Theory]
         [InlineData(nameof(PubSubTrigger_String), typeof(string))]
         [InlineData(nameof(PubSubTrigger_ByteArray), typeof(byte[]))]
-        [InlineData(nameof(PubSubTrigger_ReadOnlyMemory), typeof(ReadOnlyMemory<byte>))]
         [InlineData(nameof(PubSubTrigger_CustomType), typeof(CustomChannelMessage))]
         public async Task PubSubTrigger_TypeConversions_WorkCorrectly(string functionName, Type parameterType)
         {

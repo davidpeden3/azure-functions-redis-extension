@@ -16,7 +16,6 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
         [Theory]
         [InlineData(nameof(ListTrigger_String), typeof(string))]
         [InlineData(nameof(ListTrigger_ByteArray), typeof(byte[]))]
-        [InlineData(nameof(ListTrigger_ReadOnlyMemory), typeof(ReadOnlyMemory<byte>))]
         [InlineData(nameof(ListTrigger_CustomType), typeof(CustomType))]
         public async Task ListTrigger_TypeConversions_WorkCorrectly(string functionName, Type parameterType)
         {

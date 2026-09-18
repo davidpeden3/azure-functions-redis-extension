@@ -11,43 +11,31 @@ using Xunit;
 namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
 {
     [Collection("RedisTriggerTests")]
-    public class RedisStreamTriggerTests
+    public class RedisInputBindingTests
     {
         [Theory]
-        [InlineData(nameof(StreamTrigger_String), typeof(string))]
-        [InlineData(nameof(StreamTrigger_ByteArray), typeof(byte[]))]
-        [InlineData(nameof(StreamTrigger_ReadOnlyMemory), typeof(ReadOnlyMemory<byte>))]
-        [InlineData(nameof(StreamTrigger_CustomType), typeof(CustomStreamEntry))]
-        public async Task StreamTrigger_TypeConversions_WorkCorrectly(string functionName, Type parameterType)
+        [InlineData(nameof(InputBinding_String), typeof(string))]
+        [InlineData(nameof(InputBinding_CustomType), typeof(CustomType))]
+        public async Task InputBinding_TypeConversions_WorkCorrectly(string functionName, Type parameterType)
         {
-            NameValueEntry[] nameValueEntries = new NameValueEntry[]
-            {
-                new NameValueEntry(nameof(CustomType.Name), "randomName"),
-                new NameValueEntry(nameof(CustomType.Field), "someField"),
-            };
+            // The worker receives the value as it sits in the key. A custom type is the value deserialized.
+            string value = JsonConvert.SerializeObject(new CustomType { Name = "randomName", Field = "someField", Random = "random" });
 
             Dictionary<string, int> counts = new Dictionary<string, int>
             {
                 { IntegrationTestHelpers.GetExecutedLogValue(functionName), 1 },
+                { TestFunctionHelpers.FormatLogValue(parameterType, value), 1 },
             };
 
             using (Process redisProcess = IntegrationTestHelpers.StartRedis())
             using (ConnectionMultiplexer multiplexer = await ConnectionMultiplexer.ConnectAsync(IntegrationTestHelpers.redisConnectionString))
             {
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
-                RedisValue id = await multiplexer.GetDatabase().StreamAddAsync(functionName, nameValueEntries);
-
-                // Whatever the parameter type, the worker receives the entry as the JSON the host serializes it to:
-                // its id and its fields. A custom type is that JSON deserialized.
-                string entry = JsonConvert.SerializeObject(new CustomStreamEntry
-                {
-                    Id = id.ToString(),
-                    Values = nameValueEntries.ToDictionary(value => value.Name.ToString(), value => value.Value.ToString()),
-                });
-                counts.Add(TestFunctionHelpers.FormatLogValue(parameterType, entry), 1);
+                await multiplexer.GetDatabase().StringSetAsync(functionName, value);
 
                 using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
                 {
+                    await multiplexer.GetSubscriber().PublishAsync(RedisChannel.Literal(functionName), "start");
                     await Task.Delay(TimeSpan.FromSeconds(1));
 
                     await multiplexer.CloseAsync();

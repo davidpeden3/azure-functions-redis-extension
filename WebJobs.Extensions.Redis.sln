@@ -24,9 +24,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WriteThroughSamples", "samp
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Azure.Functions.Worker.Extensions.Redis.Samples", "samples\dotnet-isolated\Microsoft.Azure.Functions.Worker.Extensions.Redis.Samples.csproj", "{9EA54616-32DD-44C5-BB24-D0FEA4733850}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions", "test\dotnet-isolated\Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions\Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions.csproj", "{C6534975-C474-4C9B-BDBE-DFBF386B0BC9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions", "test\dotnet-isolated\Functions\Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions.csproj", "{C6534975-C474-4C9B-BDBE-DFBF386B0BC9}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests", "test\dotnet-isolated\Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests\Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.csproj", "{8201E3CB-A851-460B-A35A-D2AF3D26D3BA}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests", "test\dotnet-isolated\Tests\Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.csproj", "{8201E3CB-A851-460B-A35A-D2AF3D26D3BA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

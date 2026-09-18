@@ -31,11 +31,13 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
         private static int hostLogSequence;
 
         // The isolated app's build output, where func runs from and where the app's settings files are. The app
-        // builds beside this project for the same configuration and framework. Its output therefore sits at the
-        // same path relative to its project directory as this assembly does to this project's.
+        // builds in the Functions folder beside this project for the same configuration and framework. Its output
+        // therefore sits at the same path relative to its project directory as this assembly does to this project's.
+        // The folders are short because the Functions SDK nests a generated project under the app's obj and
+        // Visual Studio's MSBuild still stops at 260 characters.
         private static readonly string outputDirectory = Path.GetDirectoryName(typeof(IntegrationTestHelpers).Assembly.Location);
         private static readonly string projectDirectory = new DirectoryInfo(outputDirectory).Parent.Parent.Parent.FullName;
-        internal static readonly string functionsDirectory = Path.GetFullPath(Path.Combine(projectDirectory, "..", typeof(TestFunctionHelpers).Assembly.GetName().Name, Path.GetRelativePath(projectDirectory, outputDirectory)));
+        internal static readonly string functionsDirectory = Path.GetFullPath(Path.Combine(projectDirectory, "..", "Functions", Path.GetRelativePath(projectDirectory, outputDirectory)));
 
         // The connection string the tests and the Functions host share. The app's local.settings.json is the
         // default and REDIS_CONNECTION_STRING overrides it. One committed file serves every machine.
@@ -52,12 +54,21 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
         }
 
         /// <summary>
-        /// The line the host logs when an invocation of the function completes. The host names a worker's
-        /// functions under the Functions namespace.
+        /// The name the host gives a worker's function: the function's own name under the Functions namespace.
+        /// The host logs invocations under it and the extension names the Redis connection it opens for the
+        /// function's trigger after it.
+        /// </summary>
+        internal static string GetHostFunctionName(string functionName)
+        {
+            return $"Functions.{functionName}";
+        }
+
+        /// <summary>
+        /// The line the host logs when an invocation of the function completes.
         /// </summary>
         internal static string GetExecutedLogValue(string functionName)
         {
-            return $"Executed 'Functions.{functionName}' (Succeeded";
+            return $"Executed '{GetHostFunctionName(functionName)}' (Succeeded";
         }
 
         /// <summary>
@@ -191,10 +202,10 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
             // listener never started, whatever the host logged.
             IConnectionMultiplexer multiplexer = await ConnectionMultiplexer.ConnectAsync(GetListeningRedisOptions());
             ClientInfo[] clients = multiplexer.GetServers()[0].ClientList();
-            if (!clients.Any(client => client.Name == $"AzureFunctionsRedisExtension.{functionName}"))
+            if (!clients.Any(client => client.Name == $"AzureFunctionsRedisExtension.{GetHostFunctionName(functionName)}"))
             {
                 functionsProcess.Kill(entireProcessTree: true);
-                throw new Exception("Function client not found on redis server.");
+                throw new Exception($"Function client not found on redis server. Connected clients: {string.Join(", ", clients.Select(client => client.Name))}");
             }
 
             return functionsProcess;
