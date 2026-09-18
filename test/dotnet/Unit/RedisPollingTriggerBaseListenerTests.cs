@@ -11,9 +11,9 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
     public class RedisPollingTriggerBaseListenerTests
     {
         [Fact]
-        public async Task Loop_ContinuesPolling_AfterPollAsyncThrows()
+        public async Task StartAsync_KeepsPolling_AfterPollAsyncThrows()
         {
-            using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+            TaskCompletionSource<bool> thirdPoll = new TaskCompletionSource<bool>();
             int polls = 0;
 
             CallbackPollingListener listener = new CallbackPollingListener(_ =>
@@ -25,49 +25,50 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
                     throw new RedisException("transient failure");
                 }
 
-                if (polls >= 3)
+                if (polls == 3)
                 {
-                    cancellationTokenSource.Cancel();
+                    thirdPoll.TrySetResult(true);
                 }
 
                 return Task.CompletedTask;
             });
+            IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
+            A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
+            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, multiplexer);
 
-            await listener.Loop(cancellationTokenSource.Token);
+            await listener.StartAsync(CancellationToken.None);
+            await thirdPoll.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await listener.StopAsync(CancellationToken.None);
 
             Assert.True(polls >= 3, $"Expected the loop to keep polling after an exception. It polled {polls} time(s).");
         }
 
         [Fact]
-        public async Task Loop_Stops_WhenTheTokenIsCancelled()
+        public async Task StopAsync_StopsThePollingLoop()
         {
-            using CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+            TaskCompletionSource<bool> firstPoll = new TaskCompletionSource<bool>();
             int polls = 0;
 
             CallbackPollingListener listener = new CallbackPollingListener(_ =>
             {
                 polls++;
-                cancellationTokenSource.Cancel();
+                firstPoll.TrySetResult(true);
                 return Task.CompletedTask;
             });
-
-            await listener.Loop(cancellationTokenSource.Token);
-
-            Assert.Equal(1, polls);
-        }
-
-        [Fact]
-        public async Task StopAsync_CancelsThePollingLoop()
-        {
-            CallbackPollingListener listener = new CallbackPollingListener(_ => Task.CompletedTask);
             IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
             A.CallTo(() => multiplexer.GetServers()).Returns(new[] { A.Fake<IServer>() });
             RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(listener.connection, multiplexer);
             await listener.StartAsync(CancellationToken.None);
+            await firstPoll.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
             await listener.StopAsync(CancellationToken.None);
 
-            Assert.True(listener.stopTokenSource.IsCancellationRequested);
+            // The loop checks the token before each poll and sleeps one polling interval between polls.
+            // A poll already in flight when StopAsync ran can therefore still land. After that, none may.
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+            int pollsAfterStop = polls;
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+            Assert.Equal(pollsAfterStop, polls);
         }
 
         private sealed class CallbackPollingListener : RedisPollingTriggerBaseListener

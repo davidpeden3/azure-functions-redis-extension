@@ -113,7 +113,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         /// <summary>
         /// Main loop thread.
         /// </summary>
-        internal async Task Loop(CancellationToken cancellationToken)
+        private async Task Loop(CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
             {
