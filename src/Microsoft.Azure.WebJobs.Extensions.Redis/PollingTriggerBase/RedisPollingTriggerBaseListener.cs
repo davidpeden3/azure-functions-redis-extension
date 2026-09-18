@@ -58,7 +58,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
             multiplexer = await RedisExtensionConfigProvider.GetOrCreateConnectionMultiplexerAsync(configuration, azureComponentFactory, connection, name);
             logger?.LogInformation($"{logPrefix} Connecting to Redis.");
             serverVersion = multiplexer.GetServers()[0].Version;
-            BeforePolling();
+            await BeforePollingAsync();
             stopTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _ = Task.Run(() => Loop(stopTokenSource.Token));
         }
@@ -97,8 +97,12 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
 
         /// <summary>
         /// Any Redis commands necessary to run after the connection is created but before the polling starts.
+        /// A failure thrown from here fails the start of the listener so that the host retries it.
         /// </summary>
-        public virtual void BeforePolling() { }
+        public virtual Task BeforePollingAsync()
+        {
+            return Task.CompletedTask;
+        }
 
         /// <summary>
         /// Implementation of the logic used to poll the cache.
