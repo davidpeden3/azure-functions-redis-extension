@@ -4,6 +4,7 @@ using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using StackExchange.Redis;
 using System;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
@@ -110,7 +111,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
         {
             string connection = "connection";
             IConnectionMultiplexer fakeMultiplexer = A.Fake<IConnectionMultiplexer>();
-            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(connection, fakeMultiplexer);
+            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(fakeMultiplexer)));
             A.CallTo(() => fakeMultiplexer.GetDatabase(A<int>._, A<object>._)).Throws(new ObjectDisposedException("fake"));
             RedisPollingTriggerBaseScaleMonitor monitor = new RedisListTriggerScaleMonitor("name", A.Fake<IConfiguration>(), A.Fake<AzureComponentFactory>(), connection, 1, "key");
             RedisPollingTriggerBaseMetrics metrics = await monitor.GetMetricsAsync();
@@ -122,7 +123,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
         {
             string connection = "connection";
             IConnectionMultiplexer fakeMultiplexer = A.Fake<IConnectionMultiplexer>();
-            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(connection, fakeMultiplexer);
+            RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(fakeMultiplexer)));
             A.CallTo(() => fakeMultiplexer.GetDatabase(A<int>._, A<object>._)).Throws(new ObjectDisposedException("fake"));
             RedisPollingTriggerBaseScaleMonitor monitor = new RedisStreamTriggerScaleMonitor("name", A.Fake<IConfiguration>(), A.Fake<AzureComponentFactory>(), connection, 1, "key");
             RedisPollingTriggerBaseMetrics metrics = await monitor.GetMetricsAsync();

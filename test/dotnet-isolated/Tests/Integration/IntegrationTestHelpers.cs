@@ -1,8 +1,5 @@
-﻿using Azure.Core;
-using Azure.Identity;
-using Microsoft.Extensions.Azure;
-using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
+using Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions;
+using Newtonsoft.Json.Linq;
 using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
@@ -14,65 +11,91 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
+namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
 {
     internal static class IntegrationTestHelpers
     {
-        internal const int PollingIntervalShort = 100;
-        internal const int PollingIntervalLong = 10000;
-        internal const int BatchSize = 10;
-        internal const string format = "triggerValue:{0}";
-        internal const string PubSubChannel = "testChannel";
-        internal const string PubSubMultiple = "testChannel*";
-        internal const string KeyspaceChannel = "__keyspace@0__:testKey";
-        internal const string KeyspaceMultiple = "__keyspace@0__:testKey*";
-        internal const string KeyeventChannelSet = "__keyevent@0__:set";
-        internal const string KeyeventChannelAll = "__keyevent@0__:*";
-        internal const string KeyspaceChannelAll = "__keyspace@0__:*";
-        internal const string AllChannels = "*";
-
-        internal const string ConnectionString = "redisConnectionString";
-        internal const string ManagedIdentity = "redisManagedIdentity";
-        internal const string Redis60 = "/redis/redis-6.0.20";
-        internal const string Redis62 = "/redis/redis-6.2.14";
-        internal const string Redis70 = "/redis/redis-7.0.14";
-
         // Environment variables that override where the harness finds its tools. Set them when the tool is
         // installed somewhere the test runner's PATH does not reach, which is common under an IDE.
         internal const string FunctionsCoreToolsVariable = "AZURE_FUNCTIONS_CORE_TOOLS";
         internal const string RedisServerVariable = "REDIS_SERVER";
 
-        // Overrides the Redis connection string in local.settings.json for both the tests and the Functions
-        // host they start. Point it at a server that is already running, such as a dedicated test instance on
-        // another machine. The harness then uses that server instead of spawning one. The server is flushed
-        // before every test. It must be dedicated to these tests.
+        // Overrides the Redis connection string in the app's local.settings.json for both the tests and the
+        // Functions host they start. Point it at a server that is already running, such as a dedicated test
+        // instance on another machine. The harness then uses that server instead of spawning one. The server is
+        // flushed before every test. It must be dedicated to these tests.
         internal const string RedisConnectionStringVariable = "REDIS_CONNECTION_STRING";
 
         // Where the harness writes each Functions host's full output, relative to the build output.
         internal const string HostLogDirectory = "func-logs";
         private static int hostLogSequence;
 
-        internal static async Task<Process> StartFunctionAsync(string functionName, int port, bool managedIdentity = false)
+        // The isolated app's build output, where func runs from and where the app's settings files are. The app
+        // builds in the Functions folder beside this project for the same configuration and framework. Its output
+        // therefore sits at the same path relative to its project directory as this assembly does to this project's.
+        // The folders are short because the Functions SDK nests a generated project under the app's obj and
+        // Visual Studio's MSBuild still stops at 260 characters.
+        private static readonly string outputDirectory = Path.GetDirectoryName(typeof(IntegrationTestHelpers).Assembly.Location);
+        private static readonly string projectDirectory = new DirectoryInfo(outputDirectory).Parent.Parent.Parent.FullName;
+        internal static readonly string functionsDirectory = Path.GetFullPath(Path.Combine(projectDirectory, "..", "Functions", Path.GetRelativePath(projectDirectory, outputDirectory)));
+
+        // The connection string the tests and the Functions host share. The app's local.settings.json is the
+        // default and REDIS_CONNECTION_STRING overrides it. One committed file serves every machine.
+        internal static readonly string redisConnectionString = GetRedisConnectionString();
+
+        // The port a spawned server listens on, taken from the connection string so the two can never
+        // disagree. It is deliberately not 6379. A Redis already running on the developer's machine is
+        // never in the way.
+        private static readonly int redisPort = GetRedisPort();
+
+        internal static string GetFunctionsFile(string fileName)
         {
-            // func runs from the build output rather than from the project with --prefix. Core Tools applies
-            // --prefix once in the parent process and then launches the in-process host as a child with the
-            // same command line from the directory it just moved to. The child applies --prefix a second
-            // time and fails on a path that does not exist.
+            return Path.Combine(functionsDirectory, fileName);
+        }
+
+        /// <summary>
+        /// The name the host gives a worker's function: the function's own name under the Functions namespace.
+        /// The host logs invocations under it and the extension names the Redis connection it opens for the
+        /// function's trigger after it.
+        /// </summary>
+        internal static string GetHostFunctionName(string functionName)
+        {
+            return $"Functions.{functionName}";
+        }
+
+        /// <summary>
+        /// The line the host logs when an invocation of the function completes.
+        /// </summary>
+        internal static string GetExecutedLogValue(string functionName)
+        {
+            return $"Executed '{GetHostFunctionName(functionName)}' (Succeeded";
+        }
+
+        /// <summary>
+        /// Starts a Functions host that serves only <paramref name="functionName"/> and counts down
+        /// <paramref name="counts"/> as the host's output arrives. The counter is attached before the host starts
+        /// so that no line is missed, because a trigger over data that is already in Redis fires as soon as its
+        /// listener starts.
+        /// </summary>
+        internal static async Task<Process> StartFunctionAsync(string functionName, int port, IDictionary<string, int> counts)
+        {
+            // func runs from the app's build output, which holds the worker, its metadata and the extension
+            // bundle the build produced. The worker is a child process of func. Every kill takes the process tree.
             ProcessStartInfo info = new ProcessStartInfo
             {
                 FileName = GetFunctionsFileName(),
                 Arguments = $"start --verbose --functions {functionName} --port {port} --no-build",
                 WindowStyle = ProcessWindowStyle.Hidden,
-                WorkingDirectory = outputDirectory,
+                WorkingDirectory = functionsDirectory,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false
             };
-            info.EnvironmentVariables["FUNCTIONS_RUNTIME_SCALE_MONITORING_ENABLED"] = "1";
             // Core Tools injects local.settings.json into the host's environment under this prefix and leaves
             // any variable that already exists alone. This keeps the host on the same server as the test.
-            info.EnvironmentVariables[ConnectionString] = redisConnectionString;
+            info.EnvironmentVariables[$"ConnectionStrings:{TestFunctionHelpers.ConnectionString}"] = redisConnectionString;
             Process functionsProcess = new Process() { StartInfo = info };
+            functionsProcess.OutputDataReceived += CounterHandlerCreator(counts);
 
             // The last lines the host wrote. A start that fails then says why instead of only that it did.
             Queue<string> outputTail = new Queue<string>();
@@ -140,9 +163,9 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             TaskCompletionSource<bool> hostStarted = new TaskCompletionSource<bool>();
             void hostStartupHandler(object sender, DataReceivedEventArgs e)
             {
-                if (e.Data?.Contains($"Host started") ?? false)
+                if (e.Data?.Contains("Host started") ?? false)
                 {
-                    hostStarted.SetResult(true);
+                    hostStarted.TrySetResult(true);
                 }
             }
             functionsProcess.OutputDataReceived += hostStartupHandler;
@@ -150,9 +173,9 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             TaskCompletionSource<bool> functionLoaded = new TaskCompletionSource<bool>();
             void functionLoadedHandler(object sender, DataReceivedEventArgs e)
             {
-                if (e.Data?.Contains($"Generating 1 job function(s)") ?? false)
+                if (e.Data?.Contains("Generating 1 job function(s)") ?? false)
                 {
-                    functionLoaded.SetResult(true);
+                    functionLoaded.TrySetResult(true);
                 }
             }
             functionsProcess.OutputDataReceived += functionLoadedHandler;
@@ -175,78 +198,46 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             functionsProcess.OutputDataReceived -= outputTailHandler;
             functionsProcess.ErrorDataReceived -= outputTailHandler;
 
-            // Ensure that the client name is correctly set
-            ConfigurationOptions options = await RedisUtilities.ResolveConfigurationOptionsAsync(localsettings, new ClientSecretCredentialComponentFactory(), managedIdentity ? ManagedIdentity : ConnectionString, nameof(IntegrationTestHelpers));
-            options.AllowAdmin = true;
-            IConnectionMultiplexer multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
+            // The extension names the connection it opens for a trigger after the function. Its absence means the
+            // listener never started, whatever the host logged.
+            IConnectionMultiplexer multiplexer = await ConnectionMultiplexer.ConnectAsync(GetListeningRedisOptions());
             ClientInfo[] clients = multiplexer.GetServers()[0].ClientList();
-            if (!clients.Any(client => client.Name == RedisUtilities.GetRedisClientName(functionName)))
+            if (!clients.Any(client => client.Name == $"AzureFunctionsRedisExtension.{GetHostFunctionName(functionName)}"))
             {
                 functionsProcess.Kill(entireProcessTree: true);
-                throw new Exception("Function client not found on redis server.");
+                throw new Exception($"Function client not found on redis server. Connected clients: {string.Join(", ", clients.Select(client => client.Name))}");
             }
 
             return functionsProcess;
         }
 
         /// <summary>
-        /// Whether a test will run against a server that takes the same code paths as the Redis build at
-        /// <paramref name="versionPath"/>. The extension branches on server version at 6.2 and at 7.0. A
-        /// server exercises a build's paths when it sits in the same band. Tests whose assertions depend on a
-        /// band skip when the server is in another one. Every other test runs against whichever server
-        /// <see cref="StartRedis"/> resolves.
-        /// </summary>
-        internal static bool HasRedisBuild(string versionPath)
-        {
-            Version listening = GetListeningRedisVersion();
-            if (listening != null)
-            {
-                return GetVersionBand(listening) == GetVersionBand(GetBuildVersion(versionPath));
-            }
-
-            // On Windows the build lives inside WSL, where this process cannot see it.
-            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || File.Exists(GetRedisBuildFileName(versionPath));
-        }
-
-        private static Version GetBuildVersion(string versionPath)
-        {
-            // "/redis/redis-6.2.14" names the build it holds.
-            return Version.Parse(versionPath.Substring(versionPath.LastIndexOf('-') + 1));
-        }
-
-        private static int GetVersionBand(Version version)
-        {
-            return version >= RedisUtilities.Version70 ? 2 : version >= RedisUtilities.Version62 ? 1 : 0;
-        }
-
-        /// <summary>
         /// Gives the test an empty Redis server at the configured endpoint. When a server is already listening
         /// there it is flushed and reused and nothing is returned to stop. Otherwise one is spawned for the test.
         /// </summary>
-        internal static Process StartRedis(string versionPath)
+        internal static Process StartRedis()
         {
             if (TryResetListeningRedis())
             {
                 return null;
             }
 
-            ProcessStartInfo info = GetRedisServerStartInfo(versionPath);
-            Process redisProcess = new Process() { StartInfo = info };
+            Process redisProcess = new Process() { StartInfo = GetRedisServerStartInfo() };
 
-            TaskCompletionSource<bool> hostStarted = new TaskCompletionSource<bool>();
-            void hostStartupHandler(object sender, DataReceivedEventArgs e)
+            TaskCompletionSource<bool> serverStarted = new TaskCompletionSource<bool>();
+            void serverStartupHandler(object sender, DataReceivedEventArgs e)
             {
                 if (e.Data?.Contains("* Ready to accept connections") ?? false)
                 {
-                    hostStarted.SetResult(true);
+                    serverStarted.TrySetResult(true);
                 }
             }
-            redisProcess.OutputDataReceived += hostStartupHandler;
+            redisProcess.OutputDataReceived += serverStartupHandler;
 
             redisProcess.Start();
             redisProcess.BeginOutputReadLine();
             redisProcess.BeginErrorReadLine();
-            if (!hostStarted.Task.Wait(TimeSpan.FromMinutes(1)))
+            if (!serverStarted.Task.Wait(TimeSpan.FromMinutes(1)))
             {
                 StopRedis(redisProcess);
                 throw new Exception("Redis did not start");
@@ -262,25 +253,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 return;
             }
 
-            if (!redis.StartInfo.FileName.EndsWith("wsl.exe", StringComparison.OrdinalIgnoreCase))
-            {
-                redis.Kill(entireProcessTree: true);
-            }
-            else
-            {
-                ProcessStartInfo info = new ProcessStartInfo
-                {
-                    FileName = @"C:\Windows\System32\wsl.exe",
-                    Arguments = "pkill redis-server",
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false
-                };
-                Process redisKillProcess = new Process() { StartInfo = info };
-                redisKillProcess.Start();
-                redisKillProcess.WaitForExit();
-            }
+            redis.Kill(entireProcessTree: true);
         }
 
         internal static DataReceivedEventHandler CounterHandlerCreator(IDictionary<string, int> counts)
@@ -292,8 +265,8 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                     return;
                 }
 
-                // Output from several hosts arrives on several threads at once. The decrement is a read and a
-                // write. Without the lock decrements are lost and a count ends above zero.
+                // Output arrives on several threads at once. The decrement is a read and a write. Without the
+                // lock decrements are lost and a count ends above zero.
                 lock (counts)
                 {
                     foreach (string key in counts.Keys.ToList())
@@ -320,33 +293,6 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             return occurrences;
         }
 
-        // The build output and the test project it came from, found from the test assembly rather than the
-        // working directory, which each test runner sets differently. func runs from the build output and
-        // the harness reads the project's settings files from the project.
-        private static readonly string outputDirectory = Path.GetDirectoryName(typeof(IntegrationTestHelpers).Assembly.Location);
-        private static readonly string projectDirectory = new DirectoryInfo(outputDirectory).Parent.Parent.Parent.FullName;
-
-        // The connection string the tests and the Functions host share. local.settings.json is the default and
-        // REDIS_CONNECTION_STRING overrides it. One committed file serves every machine.
-        private static readonly string redisConnectionString = GetRedisConnectionString();
-
-        internal static IConfiguration localsettings = new ConfigurationBuilder()
-            .AddJsonFile(GetTestProjectFile("local.settings.json"))
-            .AddInMemoryCollection(new Dictionary<string, string> { { ConnectionString, redisConnectionString } })
-            .Build();
-
-        internal static IConfiguration hostsettings = new ConfigurationBuilder().AddJsonFile(GetTestProjectFile("host.json")).Build();
-
-        // The port a spawned server listens on, taken from the connection string so the two can never
-        // disagree. It is deliberately not 6379. A Redis already running on the developer's machine is
-        // never in the way.
-        private static readonly int redisPort = GetRedisPort();
-
-        private static string GetTestProjectFile(string fileName)
-        {
-            return Path.Combine(projectDirectory, fileName);
-        }
-
         private static string GetRedisConnectionString()
         {
             string overrideConnectionString = Environment.GetEnvironmentVariable(RedisConnectionStringVariable);
@@ -355,8 +301,8 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 return overrideConnectionString;
             }
 
-            IConfiguration file = new ConfigurationBuilder().AddJsonFile(GetTestProjectFile("local.settings.json")).Build();
-            return file.GetSection("Values")[ConnectionString];
+            JObject localSettings = JObject.Parse(File.ReadAllText(GetFunctionsFile("local.settings.json")));
+            return (string)localSettings["ConnectionStrings"][TestFunctionHelpers.ConnectionString];
         }
 
         private static int GetRedisPort()
@@ -369,7 +315,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 case IPEndPoint ipEndPoint:
                     return ipEndPoint.Port;
                 default:
-                    throw new InvalidOperationException($"The '{ConnectionString}' connection string does not name a host and port.");
+                    throw new InvalidOperationException($"The '{TestFunctionHelpers.ConnectionString}' connection string does not name a host and port.");
             }
         }
 
@@ -382,24 +328,8 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             return options;
         }
 
-        private static Version GetListeningRedisVersion()
-        {
-            try
-            {
-                using (ConnectionMultiplexer multiplexer = ConnectionMultiplexer.Connect(GetListeningRedisOptions()))
-                {
-                    return multiplexer.GetServers().Single().Version;
-                }
-            }
-            catch (RedisConnectionException)
-            {
-                return null;
-            }
-        }
-
         /// <summary>
-        /// When a server is already listening at the configured endpoint, flushes it and turns on the keyspace
-        /// notifications the pub/sub tests rely on, which a spawned server gets from its command line.
+        /// When a server is already listening at the configured endpoint, flushes it so the test starts empty.
         /// </summary>
         private static bool TryResetListeningRedis()
         {
@@ -407,9 +337,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             {
                 using (ConnectionMultiplexer multiplexer = ConnectionMultiplexer.Connect(GetListeningRedisOptions()))
                 {
-                    IServer server = multiplexer.GetServers().Single();
-                    server.FlushAllDatabases();
-                    server.ConfigSet("notify-keyspace-events", "AKE");
+                    multiplexer.GetServers().Single().FlushAllDatabases();
                     return true;
                 }
             }
@@ -419,34 +347,20 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             }
         }
 
-        private static string GetRedisBuildFileName(string versionPath)
-        {
-            return $"{versionPath}/src/redis-server";
-        }
-
         /// <summary>
-        /// How to spawn a server for the test. The exact build wins when it is present, then the server named
-        /// by <c>REDIS_SERVER</c>, then the first <c>redis-server</c> on the PATH. Windows falls back to the
-        /// build inside WSL, which is where upstream keeps it.
+        /// How to spawn a server for the test: the server named by <c>REDIS_SERVER</c>, otherwise the first
+        /// <c>redis-server</c> on the PATH.
         /// </summary>
-        private static ProcessStartInfo GetRedisServerStartInfo(string versionPath)
+        private static ProcessStartInfo GetRedisServerStartInfo()
         {
-            string build = GetRedisBuildFileName(versionPath);
-            string arguments = $"--port {redisPort} --notify-keyspace-events AKE";
             bool windows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-
-            string fileName = !windows && File.Exists(build) ? build : ResolveTool(windows ? "redis-server.exe" : "redis-server", RedisServerVariable);
-            if (fileName != null)
+            string fileName = ResolveTool(windows ? "redis-server.exe" : "redis-server", RedisServerVariable);
+            if (fileName == null)
             {
-                return CreateStartInfo(fileName, arguments);
+                throw new FileNotFoundException($"No Redis server is listening at '{redisConnectionString}' and 'redis-server' was not found on the PATH. Start a server there, install one, add it to the PATH or set {RedisServerVariable} to its location.");
             }
 
-            if (windows)
-            {
-                return CreateStartInfo(@"C:\Windows\System32\wsl.exe", $"{build} {arguments}");
-            }
-
-            throw new FileNotFoundException($"No Redis server is listening at '{redisConnectionString}', 'redis-server' was not found on the PATH and there is no build at '{build}'. Start a server there, install one, add it to the PATH or set {RedisServerVariable} to its location.");
+            return CreateStartInfo(fileName, $"--port {redisPort}");
         }
 
         private static string GetFunctionsFileName()
@@ -516,32 +430,6 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             string filepath = proc.StandardOutput.ReadLine();
             proc.WaitForExit();
             return filepath;
-        }
-
-        internal static string GetLogValue(object value)
-        {
-            return value.GetType().FullName + ":" + JsonConvert.SerializeObject(value);
-        }
-
-        internal class ClientSecretCredentialComponentFactory : AzureComponentFactory
-        {
-            public override object CreateClient(Type clientType, IConfiguration configuration, TokenCredential credential, object clientOptions)
-            {
-                throw new NotImplementedException();
-            }
-
-            public override object CreateClientOptions(Type optionsType, object serviceVersion, IConfiguration configuration)
-            {
-                throw new NotImplementedException();
-            }
-
-            public override TokenCredential CreateTokenCredential(IConfiguration configuration)
-            {
-                var clientId = configuration["clientId"];
-                var tenantId = configuration["tenantId"];
-                var clientSecret = configuration["clientSecret"];
-                return new ClientSecretCredential(tenantId, clientId, clientSecret);
-            }
         }
     }
 }
