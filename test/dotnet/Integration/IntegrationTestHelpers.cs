@@ -52,7 +52,15 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
         internal const string HostLogDirectory = "func-logs";
         private static int hostLogSequence;
 
-        internal static async Task<Process> StartFunctionAsync(string functionName, int port, bool managedIdentity = false)
+        // How long a test waits for the host to produce the output it expects once the host is up.
+        internal static readonly TimeSpan OutputTimeout = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Starts a Functions host that serves only <paramref name="functionName"/> and counts down
+        /// <paramref name="counts"/> as the host's output arrives. The counter is attached once the host is up.
+        /// Some tests count words as short as "set" and "del", which the host's own startup output also carries.
+        /// </summary>
+        internal static async Task<Process> StartFunctionAsync(string functionName, int port, IDictionary<string, int> counts, bool managedIdentity = false)
         {
             // func runs from the build output rather than from the project with --prefix. Core Tools applies
             // --prefix once in the parent process and then launches the in-process host as a child with the
@@ -186,6 +194,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 throw new Exception("Function client not found on redis server.");
             }
 
+            functionsProcess.OutputDataReceived += CounterHandlerCreator(counts);
             return functionsProcess;
         }
 
@@ -300,8 +309,38 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                     {
                         counts[key] -= CountOccurrences(e.Data, key);
                     }
+
+                    Monitor.PulseAll(counts);
                 }
             };
+        }
+
+        /// <summary>
+        /// Waits until every count in <paramref name="counts"/> has been driven to zero by the host's output,
+        /// then one more polling interval or two. A count that reaches zero proves the host did what the test
+        /// expects. The interval after that is the chance for it to do more than the test expects, which is
+        /// what a count below zero records and what the batch and scaled-out tests exist to catch. The wait is
+        /// bounded. A host that never produces the output fails the test with what is still owed.
+        /// </summary>
+        internal static async Task WaitForCountsAsync(IDictionary<string, int> counts)
+        {
+            await Task.Run(() =>
+            {
+                lock (counts)
+                {
+                    Stopwatch stopwatch = Stopwatch.StartNew();
+                    while (counts.Values.Any(count => count > 0))
+                    {
+                        TimeSpan remaining = OutputTimeout - stopwatch.Elapsed;
+                        if (remaining <= TimeSpan.Zero || !Monitor.Wait(counts, remaining))
+                        {
+                            throw new TimeoutException($"The host did not produce the expected output within {OutputTimeout}. Still expected: {string.Join(", ", counts.Where(pair => pair.Value > 0).Select(pair => $"{pair.Value} x '{pair.Key}'"))}. The host's full output is under '{HostLogDirectory}' in the build output.");
+                        }
+                    }
+                }
+            });
+
+            await Task.Delay(TimeSpan.FromMilliseconds(2 * PollingIntervalShort));
         }
 
         /// <summary>

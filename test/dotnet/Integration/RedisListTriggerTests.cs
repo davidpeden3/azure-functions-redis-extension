@@ -28,13 +28,11 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             {
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
 
-                using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
+                using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
                 {
-                    functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-
                     await multiplexer.GetDatabase().ListLeftPushAsync(functionName, valuesArray);
 
-                    await Task.Delay(TimeSpan.FromSeconds(1));
+                    await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                     await multiplexer.CloseAsync();
                     functionsProcess.Kill(entireProcessTree: true);
@@ -60,17 +58,13 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             {
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
 
-                using (Process functionsProcess1 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
-                using (Process functionsProcess2 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7072))
-                using (Process functionsProcess3 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7073))
+                using (Process functionsProcess1 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
+                using (Process functionsProcess2 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7072, counts))
+                using (Process functionsProcess3 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7073, counts))
                 {
-                    functionsProcess1.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-                    functionsProcess2.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-                    functionsProcess3.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-
                     await multiplexer.GetDatabase().ListLeftPushAsync(functionName, valuesArray);
 
-                    await Task.Delay(TimeSpan.FromSeconds(count / 4));
+                    await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                     await multiplexer.CloseAsync();
                     functionsProcess1.Kill(entireProcessTree: true);
@@ -100,10 +94,9 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 await multiplexer.GetDatabase().ListLeftPushAsync(functionName, leftValue);
                 await multiplexer.GetDatabase().ListRightPushAsync(functionName, rightValue);
 
-                using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
+                using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
                 {
-                    functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-                    await Task.Delay(TimeSpan.FromMilliseconds(IntegrationTestHelpers.PollingIntervalLong / 5));
+                    await IntegrationTestHelpers.WaitForCountsAsync(counts);
                     await multiplexer.CloseAsync();
                     functionsProcess.Kill(entireProcessTree: true);
                     IntegrationTestHelpers.StopRedis(redisProcess);
@@ -127,12 +120,11 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
             using (Process redisProcess = IntegrationTestHelpers.StartRedis(IntegrationTestHelpers.Redis60))
             using (ConnectionMultiplexer multiplexer = ConnectionMultiplexer.Connect(await RedisUtilities.ResolveConfigurationOptionsAsync(IntegrationTestHelpers.localsettings, null, IntegrationTestHelpers.ConnectionString, "test")))
-            using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
+            using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
             {
-                functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
                 await multiplexer.GetDatabase().ListLeftPushAsync(functionName, JsonConvert.SerializeObject(new CustomType() { Field = "feeld", Name = "naim", Random = "ran" }));
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                 await multiplexer.CloseAsync();
                 functionsProcess.Kill(entireProcessTree: true);
@@ -159,11 +151,9 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
                 RedisValue[] values = Enumerable.Range(0, elements).Select(n => new RedisValue(JsonConvert.SerializeObject(new CustomType() { Field = n.ToString(), Name = n.ToString(), Random = n.ToString() }))).ToArray();
                 await multiplexer.GetDatabase().ListLeftPushAsync(functionName, values.ToArray());
-                using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
+                using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
                 {
-                    functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-
-                    await Task.Delay(TimeSpan.FromMilliseconds(elements / IntegrationTestHelpers.BatchSize * IntegrationTestHelpers.PollingIntervalShort * 2));
+                    await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                     await multiplexer.CloseAsync();
                     functionsProcess.Kill(entireProcessTree: true);

@@ -30,6 +30,9 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
         internal const string HostLogDirectory = "func-logs";
         private static int hostLogSequence;
 
+        // How long a test waits for the host to produce the output it expects once the host is up.
+        internal static readonly TimeSpan OutputTimeout = TimeSpan.FromSeconds(30);
+
         // The isolated app's build output, where func runs from and where the app's settings files are. The app
         // builds in the Functions folder beside this project for the same configuration and framework. Its output
         // therefore sits at the same path relative to its project directory as this assembly does to this project's.
@@ -273,8 +276,38 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
                     {
                         counts[key] -= CountOccurrences(e.Data, key);
                     }
+
+                    Monitor.PulseAll(counts);
                 }
             };
+        }
+
+        /// <summary>
+        /// Waits until every count in <paramref name="counts"/> has been driven to zero by the host's output,
+        /// then one more polling interval or two. A count that reaches zero proves the host did what the test
+        /// expects. The interval after that is the chance for it to do more than the test expects, which is
+        /// what a count below zero records. The wait is bounded. A host that never produces the output fails
+        /// the test with what is still owed.
+        /// </summary>
+        internal static async Task WaitForCountsAsync(IDictionary<string, int> counts)
+        {
+            await Task.Run(() =>
+            {
+                lock (counts)
+                {
+                    Stopwatch stopwatch = Stopwatch.StartNew();
+                    while (counts.Values.Any(count => count > 0))
+                    {
+                        TimeSpan remaining = OutputTimeout - stopwatch.Elapsed;
+                        if (remaining <= TimeSpan.Zero || !Monitor.Wait(counts, remaining))
+                        {
+                            throw new TimeoutException($"The host did not produce the expected output within {OutputTimeout}. Still expected: {string.Join(", ", counts.Where(pair => pair.Value > 0).Select(pair => $"{pair.Value} x '{pair.Key}'"))}. The host's full output is under '{HostLogDirectory}' in the build output.");
+                        }
+                    }
+                }
+            });
+
+            await Task.Delay(TimeSpan.FromMilliseconds(2 * TestFunctionHelpers.PollingIntervalShort));
         }
 
         /// <summary>

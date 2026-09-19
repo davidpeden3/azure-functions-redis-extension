@@ -37,7 +37,7 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
             using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
             {
                 await multiplexer.GetSubscriber().PublishAsync(RedisChannel.Literal(functionName), message);
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                 await multiplexer.CloseAsync();
                 functionsProcess.Kill(entireProcessTree: true);

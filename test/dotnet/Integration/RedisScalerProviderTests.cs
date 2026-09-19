@@ -1,6 +1,7 @@
 ﻿using FakeItEasy;
 using Xunit;
 using System;
+using System.Collections.Generic;
 using Microsoft.Azure.WebJobs.Host.Scale;
 using Newtonsoft.Json.Linq;
 using Microsoft.Extensions.Configuration;
@@ -131,8 +132,12 @@ $@"{{
                     await multiplexer.GetDatabase().StreamAddAsync(redisMetadata.key, value, value);
                 }
 
-                Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071);
-                await Task.Delay(TimeSpan.FromMilliseconds(2 * processed / IntegrationTestHelpers.BatchSize * IntegrationTestHelpers.PollingIntervalShort));
+                Dictionary<string, int> counts = new Dictionary<string, int>
+                {
+                    { $"Executed '{functionName}' (Succeeded", processed / IntegrationTestHelpers.BatchSize },
+                };
+                Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts);
+                await IntegrationTestHelpers.WaitForCountsAsync(counts);
                 functionsProcess.Kill(entireProcessTree: true);
 
                 foreach (int value in Enumerable.Range(processed, unprocessed))
@@ -177,8 +182,12 @@ $@"{{
                     await multiplexer.GetDatabase().StreamAddAsync(redisMetadata.key, value, value, $"1-{value}");
                 }
 
-                Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071);
-                await Task.Delay(TimeSpan.FromMilliseconds(2 * processed / IntegrationTestHelpers.BatchSize * IntegrationTestHelpers.PollingIntervalShort));
+                Dictionary<string, int> counts = new Dictionary<string, int>
+                {
+                    { $"Executed '{functionName}' (Succeeded", processed / IntegrationTestHelpers.BatchSize },
+                };
+                Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts);
+                await IntegrationTestHelpers.WaitForCountsAsync(counts);
                 functionsProcess.Kill(entireProcessTree: true);
 
                 foreach (int value in Enumerable.Range(processed, unprocessed))
