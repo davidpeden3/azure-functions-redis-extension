@@ -33,7 +33,7 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Integration
                 {
                     // The function deletes the key named in the message.
                     await multiplexer.GetSubscriber().PublishAsync(RedisChannel.Literal(functionName), functionName);
-                    await Task.Delay(TimeSpan.FromSeconds(1));
+                    await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                     exists = await multiplexer.GetDatabase().KeyExistsAsync(functionName);
                     await multiplexer.CloseAsync();

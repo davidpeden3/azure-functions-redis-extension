@@ -35,13 +35,11 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
             using (Process redisProcess = IntegrationTestHelpers.StartRedis(IntegrationTestHelpers.Redis60))
             using (ConnectionMultiplexer multiplexer = ConnectionMultiplexer.Connect(await RedisUtilities.ResolveConfigurationOptionsAsync(IntegrationTestHelpers.localsettings, null, IntegrationTestHelpers.ConnectionString, "test")))
-            using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
+            using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
             {
-                functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-
                 await multiplexer.GetDatabase().StreamAddAsync(functionName, nameValueEntries);
 
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                 await multiplexer.CloseAsync();
                 functionsProcess.Kill(entireProcessTree: true);
@@ -70,20 +68,16 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
             using (Process redisProcess = IntegrationTestHelpers.StartRedis(IntegrationTestHelpers.Redis60))
             using (ConnectionMultiplexer multiplexer = ConnectionMultiplexer.Connect(await RedisUtilities.ResolveConfigurationOptionsAsync(IntegrationTestHelpers.localsettings, null, IntegrationTestHelpers.ConnectionString, "test")))
-            using (Process functionsProcess1 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
-            using (Process functionsProcess2 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7072))
-            using (Process functionsProcess3 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7073))
+            using (Process functionsProcess1 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
+            using (Process functionsProcess2 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7072, counts))
+            using (Process functionsProcess3 = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7073, counts))
             {
-                functionsProcess1.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-                functionsProcess2.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-                functionsProcess3.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-
                 for (int i = 0; i < count; i++)
                 {
                     await multiplexer.GetDatabase().StreamAddAsync(functionName, nameValueEntries);
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(count / 4));
+                await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                 await multiplexer.CloseAsync();
                 functionsProcess1.Kill(entireProcessTree: true);
@@ -120,13 +114,10 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
 
             using (Process redisProcess = IntegrationTestHelpers.StartRedis(IntegrationTestHelpers.Redis60))
             using (ConnectionMultiplexer multiplexer = ConnectionMultiplexer.Connect(await RedisUtilities.ResolveConfigurationOptionsAsync(IntegrationTestHelpers.localsettings, null, IntegrationTestHelpers.ConnectionString, "test")))
-            using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
+            using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
             {
-                functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-                ISubscriber subscriber = multiplexer.GetSubscriber();
-
                 await multiplexer.GetDatabase().StreamAddAsync(functionName, nameValueEntries);
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                 await multiplexer.CloseAsync();
                 functionsProcess.Kill(entireProcessTree: true);
@@ -156,11 +147,9 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
                 await multiplexer.GetDatabase().KeyDeleteAsync(functionName);
                 await Task.WhenAll(Enumerable.Range(0, elements).Select(i => multiplexer.GetDatabase().StreamAddAsync(functionName, i, i)));
 
-                using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071))
+                using (Process functionsProcess = await IntegrationTestHelpers.StartFunctionAsync(functionName, 7071, counts))
                 {
-                    functionsProcess.OutputDataReceived += IntegrationTestHelpers.CounterHandlerCreator(counts);
-
-                    await Task.Delay(elements / IntegrationTestHelpers.BatchSize * IntegrationTestHelpers.PollingIntervalShort * 2);
+                    await IntegrationTestHelpers.WaitForCountsAsync(counts);
 
                     await multiplexer.CloseAsync();
                     functionsProcess.Kill(entireProcessTree: true);
