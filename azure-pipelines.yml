@@ -40,7 +40,7 @@ jobs:
         displayName: Install .NET SDK
         inputs:
           packageType: sdk
-          version: 6.x
+          version: 8.x
           performMultiLevelLookup: true
 
       - task: Bash@3

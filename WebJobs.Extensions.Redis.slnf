@@ -1,0 +1,12 @@
+{
+  "solution": {
+    "path": "WebJobs.Extensions.Redis.sln",
+    "projects": [
+      "src\\Microsoft.Azure.Functions.Worker.Extensions.Redis\\Microsoft.Azure.Functions.Worker.Extensions.Redis.csproj",
+      "src\\Microsoft.Azure.WebJobs.Extensions.Redis\\Microsoft.Azure.WebJobs.Extensions.Redis.csproj",
+      "test\\dotnet-isolated\\Functions\\Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.Functions.csproj",
+      "test\\dotnet-isolated\\Tests\\Microsoft.Azure.Functions.Worker.Extensions.Redis.Tests.csproj",
+      "test\\dotnet\\Microsoft.Azure.WebJobs.Extensions.Redis.Tests.csproj"
+    ]
+  }
+}

@@ -25,14 +25,14 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
             { "falseKey", "false" }
         }).Build();
 
-        private static IConfiguration localsettings = new ConfigurationBuilder().AddJsonFile(Path.Combine(new DirectoryInfo(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName, "local.settings.json")).Build();
+        private static IConfiguration localsettings = new ConfigurationBuilder().AddJsonFile(Path.Combine(new DirectoryInfo(Directory.GetCurrentDirectory()).Parent.Parent.Parent.FullName, "local.settings.json")).Build().GetSection("Values");
 
         [Fact]
         public async void ResolveConfigurationOptionsAsync_ValidConnection_ReturnsResolvedString()
         {
             ConfigurationOptions options = await RedisUtilities.ResolveConfigurationOptionsAsync(localsettings, null, "redisConnectionString", "test");
             Assert.Single(options.EndPoints);
-            Assert.Equal("127.0.0.1:6379", options.EndPoints[0].ToString());
+            Assert.Equal("127.0.0.1:16379", options.EndPoints[0].ToString());
         }
 
         [Fact]

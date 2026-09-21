@@ -19,6 +19,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         internal ITriggeredFunctionExecutor executor;
         internal ILogger logger;
         internal string logPrefix;
+        internal ChannelMessageQueue channelMessageQueue;
 
         public RedisPubSubListener(string name, IConnectionMultiplexer multiplexer, string channel, bool pattern, ITriggeredFunctionExecutor executor, ILogger logger)
         {
@@ -36,8 +37,8 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         public async Task StartAsync(CancellationToken cancellationToken)
         {
             RedisChannel redisChannel = new RedisChannel(channel, pattern ? RedisChannel.PatternMode.Pattern : RedisChannel.PatternMode.Literal);
-            ChannelMessageQueue channelMessageQeueue = await multiplexer.GetSubscriber().SubscribeAsync(redisChannel);
-            channelMessageQeueue.OnMessage(async (message) =>
+            channelMessageQueue = await multiplexer.GetSubscriber().SubscribeAsync(redisChannel);
+            channelMessageQueue.OnMessage(async (message) =>
             {
                 logger?.LogDebug($"{logPrefix} Message received on channel '{channel}'.");
                 await executor.TryExecuteAsync(new TriggeredFunctionData() { TriggerValue = message }, cancellationToken);
@@ -46,31 +47,29 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         }
 
         /// <summary>
-        /// Triggers disconnect from cache when cancellation token is invoked.
+        /// Unsubscribes from the channel. The multiplexer stays open. Every trigger, scale monitor and binding on
+        /// the same connection shares it and the cache in <see cref="RedisExtensionConfigProvider"/> owns it for
+        /// the life of the process.
         /// </summary>
         public async Task StopAsync(CancellationToken cancellationToken)
         {
-            await CloseMultiplexerAsync(multiplexer);
+            if (channelMessageQueue is null)
+            {
+                return;
+            }
+
+            await channelMessageQueue.UnsubscribeAsync();
+            logger?.LogInformation($"{logPrefix} Unsubscribed from channel '{channel}'.");
         }
 
-        public async void Cancel()
+        public void Cancel()
         {
-            await CloseMultiplexerAsync(multiplexer);
+            channelMessageQueue?.Unsubscribe();
         }
 
-        public async void Dispose()
+        public void Dispose()
         {
-            await CloseMultiplexerAsync(multiplexer);
-        }
-
-        /// <summary>
-        /// Closes redis cache multiplexer connection.
-        /// </summary>
-        internal async Task CloseMultiplexerAsync(IConnectionMultiplexer existingMultiplexer)
-        {
-            logger?.LogInformation($"{logPrefix} Closing and disposing multiplexer.");
-            await existingMultiplexer.CloseAsync();
-            await existingMultiplexer.DisposeAsync();
+            channelMessageQueue?.Unsubscribe();
         }
     }
 }

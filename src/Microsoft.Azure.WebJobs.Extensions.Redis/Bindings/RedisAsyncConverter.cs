@@ -46,7 +46,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
 
         internal static object RedisResultTypeConverter(RedisResult value, Type destinationType)
         {
-            switch (value.Type)
+            switch (value.Resp2Type)
             {
                 case ResultType.None:
                     return null;
@@ -57,7 +57,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
                 case ResultType.BulkString:
                     return RedisUtilities.RedisValueTypeConverter((RedisValue)value, destinationType);
                 default:
-                    throw new InvalidOperationException($"Redis Output BindingResultTypeConverter does not support RedisResult type '{value.Type}'.");
+                    throw new InvalidOperationException($"Redis Output BindingResultTypeConverter does not support RedisResult type '{value.Resp2Type}'.");
             }
         }
 

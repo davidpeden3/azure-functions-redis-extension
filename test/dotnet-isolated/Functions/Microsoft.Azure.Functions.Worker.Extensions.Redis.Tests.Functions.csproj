@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+    <OutputType>Exe</OutputType>
+    <RepositoryUrl>https://github.com/Azure/azure-functions-redis-extension</RepositoryUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.1.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Microsoft.Azure.Functions.Worker.Extensions.Redis\Microsoft.Azure.Functions.Worker.Extensions.Redis.csproj" />
+    <!-- Build order only. The extension reaches this app the way it reaches any isolated app: the Functions SDK reads
+         the ExtensionInformationAttribute on the shim and restores the extension package for the host. PackRedisExtension
+         packs that package from the extension's build output. The extension therefore has to build first. -->
+    <ProjectReference Include="..\..\..\src\Microsoft.Azure.WebJobs.Extensions.Redis\Microsoft.Azure.WebJobs.Extensions.Redis.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="host.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="local.settings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- The Functions SDK generates a WorkerExtensions project that references Microsoft.Azure.WebJobs.Extensions.Redis at
+       the version the shim carries in its ExtensionInformationAttribute. Left alone, that reference resolves from nuget.org
+       and .azurefunctions carries the released extension rather than the one built here. This target packs the extension
+       from this build into a folder feed and adds the feed to the sources the SDK restores the generated project from, so
+       .azurefunctions carries the extension built from the same commit as the shim. The package is evicted from the global
+       packages folder first because NuGet never re-extracts a version it already holds. -->
+  <Target Name="PackRedisExtension" BeforeTargets="_WorkerExtensionsRestore">
+    <PropertyGroup>
+      <RedisExtensionFeed>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'obj', 'redis-extension'))</RedisExtensionFeed>
+    </PropertyGroup>
+    <RemoveDir Directories="$(RedisExtensionFeed)" />
+    <MSBuild Projects="..\..\..\src\Microsoft.Azure.WebJobs.Extensions.Redis\Microsoft.Azure.WebJobs.Extensions.Redis.csproj" Targets="Pack" Properties="NoBuild=true;PackageOutputPath=$(RedisExtensionFeed)" />
+    <ItemGroup>
+      <RedisExtensionPackage Include="$(RedisExtensionFeed)Microsoft.Azure.WebJobs.Extensions.Redis.*.nupkg" />
+    </ItemGroup>
+    <PropertyGroup>
+      <RedisExtensionVersion>$([System.String]::Copy('%(RedisExtensionPackage.Filename)').Replace('Microsoft.Azure.WebJobs.Extensions.Redis.', '').ToLowerInvariant())</RedisExtensionVersion>
+    </PropertyGroup>
+    <RemoveDir Directories="$(NuGetPackageRoot)microsoft.azure.webjobs.extensions.redis/$(RedisExtensionVersion)" />
+    <PropertyGroup>
+      <_OutputSources>$(_OutputSources);$(RedisExtensionFeed)</_OutputSources>
+    </PropertyGroup>
+  </Target>
+</Project>

@@ -25,12 +25,14 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
             this.scaleMonitor = new RedisListTriggerScaleMonitor(name, configuration, azureComponentFactory, connection, maxBatchSize, key);
         }
 
-        public override void BeforePolling()
+        public override Task BeforePollingAsync()
         {
             if (serverVersion < RedisUtilities.Version62 && maxBatchSize > 1)
             {
                 logger?.LogWarning($"{logPrefix} The cache's version ({serverVersion}) is lower than 6.2 and does not support the COUNT argument in lpop/rpop. Defaulting to lpop/rpop without the COUNT argument, which pulls a single entry from the list at a time.");
             }
+
+            return Task.CompletedTask;
         }
 
         public override async Task PollAsync(CancellationToken cancellationToken)
