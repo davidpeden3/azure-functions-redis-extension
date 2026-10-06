@@ -15,6 +15,18 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
     /// </summary>
     internal sealed class RedisStreamListener : RedisPollingTriggerBaseListener
     {
+        // XGROUP DELCONSUMER discards the consumer's pending entries along with it. An entry that was delivered
+        // but never acknowledged must stay pending so that it can still be claimed and retried. The consumer is
+        // therefore deleted only when it has nothing pending. Every host process on an instance reads under the
+        // same consumer name. The check and the delete run as one script so that a process still reading under
+        // that name cannot have an entry delivered to it between the two.
+        internal const string DeleteConsumerWithoutPendingEntriesScript = @"
+if #redis.call('XPENDING', KEYS[1], ARGV[1], '-', '+', 1, ARGV[2]) > 0 then
+    return 0
+end
+redis.call('XGROUP', 'DELCONSUMER', KEYS[1], ARGV[1], ARGV[2])
+return 1";
+
         internal string consumerName;
         internal string entriesReadKey;
 
@@ -98,8 +110,15 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         {
             IDatabase db = multiplexer.GetDatabase();
             logger?.LogInformation($"{logPrefix} Attempting to delete consumer name '{consumerName}' from the consumer group '{name}' for the stream at key '{key}'.");
-            long pending = await db.StreamDeleteConsumerAsync(key, name, consumerName);
-            logger?.LogInformation($"{logPrefix} Successfully deleted consumer name '{consumerName}' from the consumer group '{name}' for the stream at key '{key}'. There were {pending} pending messages for the consumer.");
+            bool deleted = (bool)await db.ScriptEvaluateAsync(DeleteConsumerWithoutPendingEntriesScript, new RedisKey[] { key }, new RedisValue[] { name, consumerName });
+            if (deleted)
+            {
+                logger?.LogInformation($"{logPrefix} Successfully deleted consumer name '{consumerName}' from the consumer group '{name}' for the stream at key '{key}'.");
+            }
+            else
+            {
+                logger?.LogInformation($"{logPrefix} Kept consumer name '{consumerName}' in the consumer group '{name}' for the stream at key '{key}' because it has pending messages. They stay pending for the consumer group to claim.");
+            }
         }
     }
 }
