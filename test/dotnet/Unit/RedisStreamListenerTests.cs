@@ -36,19 +36,27 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
         }
 
         [Fact]
-        public async Task StopAsync_DeletesTheConsumerFromTheGroup()
+        public async Task StopAsync_DeletesTheConsumerOnlyWhenItHasNoPendingEntries()
         {
             IDatabase database = A.Fake<IDatabase>();
             A.CallTo(database).WithReturnType<Task<bool>>().Where(call => call.Method.Name == nameof(IDatabase.StreamCreateConsumerGroupAsync))
                 .Returns(true);
             A.CallTo(database).WithReturnType<Task<StreamEntry[]>>().Where(call => call.Method.Name == nameof(IDatabase.StreamReadGroupAsync))
                 .Returns(Array.Empty<StreamEntry>());
+            A.CallTo(() => database.ScriptEvaluateAsync(A<string>._, A<RedisKey[]>._, A<RedisValue[]>._, A<CommandFlags>._))
+                .Returns(RedisResult.Create(1));
             RedisStreamListener listener = CreateListener(database);
             await listener.StartAsync(CancellationToken.None);
 
             await listener.StopAsync(CancellationToken.None);
 
-            A.CallTo(() => database.StreamDeleteConsumerAsync("key", "name", listener.consumerName, A<CommandFlags>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => database.ScriptEvaluateAsync(
+                    RedisStreamListener.DeleteConsumerWithoutPendingEntriesScript,
+                    A<RedisKey[]>.That.IsSameSequenceAs(new RedisKey[] { "key" }),
+                    A<RedisValue[]>.That.IsSameSequenceAs(new RedisValue[] { "name", listener.consumerName }),
+                    A<CommandFlags>._))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => database.StreamDeleteConsumerAsync(A<RedisKey>._, A<RedisValue>._, A<RedisValue>._, A<CommandFlags>._)).MustNotHaveHappened();
         }
 
         [Fact]
