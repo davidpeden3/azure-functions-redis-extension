@@ -62,6 +62,77 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Unit
             A.CallTo(database).MustNotHaveHappened();
         }
 
+        [Fact]
+        public async Task PollAsync_AcknowledgesTheEntry_WhenTheFunctionSucceeds()
+        {
+            StreamEntry entry = new StreamEntry("1-0", Array.Empty<NameValueEntry>());
+            IDatabase database = SeedEntries(entry);
+            RedisStreamListener listener = CreatePollingListener(database, batch: false, new FunctionResult(true));
+
+            await listener.PollAsync(CancellationToken.None);
+
+            A.CallTo(() => database.StreamAcknowledgeAsync("key", "name", entry.Id, A<CommandFlags>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [Fact]
+        public async Task PollAsync_LeavesTheEntryPending_WhenTheFunctionFails()
+        {
+            StreamEntry entry = new StreamEntry("1-0", Array.Empty<NameValueEntry>());
+            IDatabase database = SeedEntries(entry);
+            RedisStreamListener listener = CreatePollingListener(database, batch: false, new FunctionResult(new InvalidOperationException("function failed")));
+
+            await listener.PollAsync(CancellationToken.None);
+
+            A.CallTo(() => database.StreamAcknowledgeAsync(A<RedisKey>._, A<RedisValue>._, A<RedisValue>._, A<CommandFlags>._)).MustNotHaveHappened();
+            A.CallTo(() => database.StreamAcknowledgeAsync(A<RedisKey>._, A<RedisValue>._, A<RedisValue[]>._, A<CommandFlags>._)).MustNotHaveHappened();
+        }
+
+        [Fact]
+        public async Task PollAsync_AcknowledgesTheBatch_WhenTheBatchFunctionSucceeds()
+        {
+            StreamEntry first = new StreamEntry("1-0", Array.Empty<NameValueEntry>());
+            StreamEntry second = new StreamEntry("2-0", Array.Empty<NameValueEntry>());
+            IDatabase database = SeedEntries(first, second);
+            RedisStreamListener listener = CreatePollingListener(database, batch: true, new FunctionResult(true));
+
+            await listener.PollAsync(CancellationToken.None);
+
+            A.CallTo(() => database.StreamAcknowledgeAsync("key", "name", A<RedisValue[]>.That.IsSameSequenceAs(new[] { first.Id, second.Id }), A<CommandFlags>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [Fact]
+        public async Task PollAsync_LeavesEveryEntryInTheBatchPending_WhenTheBatchFunctionFails()
+        {
+            StreamEntry first = new StreamEntry("1-0", Array.Empty<NameValueEntry>());
+            StreamEntry second = new StreamEntry("2-0", Array.Empty<NameValueEntry>());
+            IDatabase database = SeedEntries(first, second);
+            RedisStreamListener listener = CreatePollingListener(database, batch: true, new FunctionResult(new InvalidOperationException("function failed")));
+
+            await listener.PollAsync(CancellationToken.None);
+
+            A.CallTo(() => database.StreamAcknowledgeAsync(A<RedisKey>._, A<RedisValue>._, A<RedisValue>._, A<CommandFlags>._)).MustNotHaveHappened();
+            A.CallTo(() => database.StreamAcknowledgeAsync(A<RedisKey>._, A<RedisValue>._, A<RedisValue[]>._, A<CommandFlags>._)).MustNotHaveHappened();
+        }
+
+        private static IDatabase SeedEntries(params StreamEntry[] entries)
+        {
+            IDatabase database = A.Fake<IDatabase>();
+            A.CallTo(database).WithReturnType<Task<StreamEntry[]>>().Where(call => call.Method.Name == nameof(IDatabase.StreamReadGroupAsync))
+                .Returns(entries);
+            return database;
+        }
+
+        private static RedisStreamListener CreatePollingListener(IDatabase database, bool batch, FunctionResult result)
+        {
+            ITriggeredFunctionExecutor executor = A.Fake<ITriggeredFunctionExecutor>();
+            A.CallTo(() => executor.TryExecuteAsync(A<TriggeredFunctionData>._, A<CancellationToken>._)).Returns(result);
+            IConnectionMultiplexer multiplexer = A.Fake<IConnectionMultiplexer>();
+            A.CallTo(() => multiplexer.GetDatabase(A<int>._, A<object>._)).Returns(database);
+            RedisStreamListener listener = new RedisStreamListener("name", null, null, Guid.NewGuid().ToString(), "key", TimeSpan.FromMilliseconds(1), 2, batch, executor, A.Fake<ILogger>());
+            listener.multiplexer = multiplexer;
+            return listener;
+        }
+
         private static RedisStreamListener CreateListener(IDatabase database)
         {
             string connection = Guid.NewGuid().ToString();
