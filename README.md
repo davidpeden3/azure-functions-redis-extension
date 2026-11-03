@@ -121,6 +121,27 @@ These are usually processed in parallel, with each entry from the list triggerin
 If a `dotnet in-process` function defines the parameter type as [`StreamEntry[]`](https://github.com/StackExchange/StackExchange.Redis/blob/main/src/StackExchange.Redis/APITypes/StreamEntry.cs), [`NameValueEntry[][]`](https://github.com/StackExchange/StackExchange.Redis/blob/main/src/StackExchange.Redis/APITypes/NameValueEntry.cs), `Dictionary<string, string>[]`, `string[]`, or `byte[][]`, there will only be one function invocation with all entries returned as this array type.
   - Default: `16`
 
+#### Retrying failed entries
+An entry is acknowledged only when its function succeeds. A failed entry stays in the consumer group's pending entries list. The trigger can reclaim idle pending entries and run them again, up to a delivery limit, with two settings in the `extensions.redis` section of `host.json`:
+
+```json
+{
+  "extensions": {
+    "redis": {
+      "streamClaimMinIdleTimeInMs": 120000,
+      "streamMaxDeliveryCount": 4
+    }
+  }
+}
+```
+
+- `streamClaimMinIdleTimeInMs`: How long an entry must have been pending before the trigger reclaims it with [`XCLAIM`](https://redis.io/commands/xclaim/) and runs the function again. It must be longer than the function takes to run, because an entry still in flight is reclaimed once it has been idle this long. The check runs at most once per this interval for each function.
+  - Default: `0`
+- `streamMaxDeliveryCount`: How many times an entry may be delivered to its consumer group. Redis counts deliveries per entry: `XREADGROUP` sets the count to 1 and every `XCLAIM` adds 1. An entry that has been delivered this many times stays pending and is never reclaimed again, which leaves it for the application to inspect, dead-letter or acknowledge.
+  - Default: `0`
+
+Both settings are needed to reclaim. With both at their defaults a failed entry stays pending and is never run again by the trigger. Setting only one of the two fails the host start.
+
 #### Available Parameter Types
 - Types exclusive to `dotnet in-process`
   - [`StreamEntry`](https://github.com/StackExchange/StackExchange.Redis/blob/main/src/StackExchange.Redis/APITypes/StreamEntry.cs): The value returned by `StackExchange.Redis`.
