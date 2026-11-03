@@ -16,13 +16,15 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         private readonly IConfiguration configuration;
         private readonly AzureComponentFactory azureComponentFactory;
         private readonly INameResolver nameResolver;
+        private readonly RedisOptions options;
         private readonly ILogger logger;
 
-        public RedisStreamTriggerBindingProvider(IConfiguration configuration, AzureComponentFactory azureComponentFactory, INameResolver nameResolver, ILogger logger)
+        public RedisStreamTriggerBindingProvider(IConfiguration configuration, AzureComponentFactory azureComponentFactory, INameResolver nameResolver, RedisOptions options, ILogger logger)
         {
             this.configuration = configuration;
             this.azureComponentFactory = azureComponentFactory;
             this.nameResolver = nameResolver;
+            this.options = options;
             this.logger = logger;
         }
 
@@ -55,6 +57,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
                 pollingInterval,
                 attribute.MaxBatchSize,
                 parameter.ParameterType,
+                options,
                 logger
             ));
         }

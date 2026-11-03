@@ -73,6 +73,79 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
             Assert.Empty(consumers);
         }
 
+        [Fact]
+        public async Task PollAsync_ClaimsAndRunsAFailedEntryAgain_UntilTheDeliveryLimit()
+        {
+            const int claimMinIdleTimeInMs = 100;
+            const int maxDeliveryCount = 3;
+            StreamPendingMessageInfo[] pending;
+            int runs = 0;
+
+            using (Process redisProcess = IntegrationTestHelpers.StartRedis(IntegrationTestHelpers.Redis60))
+            using (ConnectionMultiplexer multiplexer = await ConnectAsync())
+            {
+                IDatabase db = multiplexer.GetDatabase();
+                ITriggeredFunctionExecutor executor = A.Fake<ITriggeredFunctionExecutor>();
+                A.CallTo(() => executor.TryExecuteAsync(A<TriggeredFunctionData>._, A<CancellationToken>._)).ReturnsLazily(() =>
+                {
+                    runs++;
+                    return new FunctionResult(new InvalidOperationException("function failed"));
+                });
+                RedisStreamListener listener = CreatePollingListener(multiplexer, executor, new RedisOptions { StreamClaimMinIdleTimeInMs = claimMinIdleTimeInMs, StreamMaxDeliveryCount = maxDeliveryCount });
+                await db.StreamCreateConsumerGroupAsync(Key, Group, StreamPosition.Beginning);
+                await db.StreamAddAsync(Key, "name", "value");
+
+                // The first poll reads the entry. Each later poll, once the entry has sat idle long enough, claims it again
+                // until it has been delivered maxDeliveryCount times. One poll beyond that proves it is then left alone.
+                for (int poll = 0; poll <= maxDeliveryCount; poll++)
+                {
+                    await listener.PollAsync(CancellationToken.None);
+                    await Task.Delay(2 * claimMinIdleTimeInMs);
+                    listener.nextClaimUtc = DateTime.UtcNow;
+                }
+
+                pending = await db.StreamPendingMessagesAsync(Key, Group, 10, listener.consumerName);
+                IntegrationTestHelpers.StopRedis(redisProcess);
+            }
+
+            Assert.Equal(maxDeliveryCount, runs);
+            Assert.Equal(maxDeliveryCount, Assert.Single(pending).DeliveryCount);
+        }
+
+        [Fact]
+        public async Task PollAsync_AcknowledgesAClaimedEntry_WhenItsFunctionSucceeds()
+        {
+            const int claimMinIdleTimeInMs = 100;
+            StreamPendingMessageInfo[] pending;
+            int runs = 0;
+
+            using (Process redisProcess = IntegrationTestHelpers.StartRedis(IntegrationTestHelpers.Redis60))
+            using (ConnectionMultiplexer multiplexer = await ConnectAsync())
+            {
+                IDatabase db = multiplexer.GetDatabase();
+                ITriggeredFunctionExecutor executor = A.Fake<ITriggeredFunctionExecutor>();
+                A.CallTo(() => executor.TryExecuteAsync(A<TriggeredFunctionData>._, A<CancellationToken>._)).ReturnsLazily(() =>
+                {
+                    runs++;
+                    return runs == 1 ? new FunctionResult(new InvalidOperationException("function failed")) : new FunctionResult(true);
+                });
+                RedisStreamListener listener = CreatePollingListener(multiplexer, executor, new RedisOptions { StreamClaimMinIdleTimeInMs = claimMinIdleTimeInMs, StreamMaxDeliveryCount = 3 });
+                await db.StreamCreateConsumerGroupAsync(Key, Group, StreamPosition.Beginning);
+                await db.StreamAddAsync(Key, "name", "value");
+
+                await listener.PollAsync(CancellationToken.None);
+                await Task.Delay(2 * claimMinIdleTimeInMs);
+                listener.nextClaimUtc = DateTime.UtcNow;
+                await listener.PollAsync(CancellationToken.None);
+
+                pending = await db.StreamPendingMessagesAsync(Key, Group, 10, listener.consumerName);
+                IntegrationTestHelpers.StopRedis(redisProcess);
+            }
+
+            Assert.Equal(2, runs);
+            Assert.Empty(pending);
+        }
+
         private static async Task<ConnectionMultiplexer> ConnectAsync()
         {
             return await ConnectionMultiplexer.ConnectAsync(await RedisUtilities.ResolveConfigurationOptionsAsync(IntegrationTestHelpers.localsettings, null, IntegrationTestHelpers.ConnectionString, "test"));
@@ -86,7 +159,18 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis.Tests.Integration
         {
             string connection = Guid.NewGuid().ToString();
             RedisExtensionConfigProvider.connectionMultiplexerCache.TryAdd(connection, new Lazy<Task<IConnectionMultiplexer>>(() => Task.FromResult(multiplexer)));
-            return new RedisStreamListener(Group, null, null, connection, Key, TimeSpan.FromMilliseconds(IntegrationTestHelpers.PollingIntervalShort), 1, false, A.Fake<ITriggeredFunctionExecutor>(), A.Fake<ILogger>());
+            return new RedisStreamListener(Group, null, null, connection, Key, TimeSpan.FromMilliseconds(IntegrationTestHelpers.PollingIntervalShort), 1, false, new RedisOptions(), A.Fake<ITriggeredFunctionExecutor>(), A.Fake<ILogger>());
+        }
+
+        /// <summary>
+        /// A listener polled by hand rather than started. The test drives each poll itself so that it can wait out the
+        /// claim idle time between them.
+        /// </summary>
+        private static RedisStreamListener CreatePollingListener(IConnectionMultiplexer multiplexer, ITriggeredFunctionExecutor executor, RedisOptions options)
+        {
+            RedisStreamListener listener = new RedisStreamListener(Group, null, null, Guid.NewGuid().ToString(), Key, TimeSpan.FromMilliseconds(IntegrationTestHelpers.PollingIntervalShort), 1, false, options, executor, A.Fake<ILogger>());
+            listener.multiplexer = multiplexer;
+            return listener;
         }
     }
 }

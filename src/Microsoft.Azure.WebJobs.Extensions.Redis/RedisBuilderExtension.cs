@@ -21,7 +21,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
                 throw new ArgumentNullException(nameof(builder));
             }
 
-            builder.AddExtension<RedisExtensionConfigProvider>();
+            builder.AddExtension<RedisExtensionConfigProvider>().BindOptions<RedisOptions>();
             builder.Services.AddAzureClientsCore();
             return builder;
         }
