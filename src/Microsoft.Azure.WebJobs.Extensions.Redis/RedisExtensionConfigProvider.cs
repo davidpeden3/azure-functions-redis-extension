@@ -4,6 +4,7 @@ using Microsoft.Azure.WebJobs.Host.Config;
 using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System;
 using System.Collections.Concurrent;
@@ -23,6 +24,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         internal readonly INameResolver nameResolver;
         internal readonly ILoggerFactory loggerFactory;
         internal readonly AzureComponentFactory azureComponentFactory;
+        internal readonly RedisOptions options;
 
         // Each entry is a lazily-started connect shared by every trigger and binding on the same connection.
         // Caching the multiplexer itself (check-then-act) let every listener that started concurrently on a
@@ -38,12 +40,20 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
         /// <param name="nameResolver"></param>
         /// <param name="loggerFactory"></param>
         /// <param name="azureComponentFactory"></param>
-        public RedisExtensionConfigProvider(IConfiguration configuration, INameResolver nameResolver, ILoggerFactory loggerFactory, AzureComponentFactory azureComponentFactory)
+        /// <param name="options"></param>
+        public RedisExtensionConfigProvider(IConfiguration configuration, INameResolver nameResolver, ILoggerFactory loggerFactory, AzureComponentFactory azureComponentFactory, IOptions<RedisOptions> options)
         {
             this.configuration = configuration;
             this.nameResolver = nameResolver;
             this.loggerFactory = loggerFactory;
             this.azureComponentFactory = azureComponentFactory;
+            this.options = options.Value;
+            if (!this.options.IsValid)
+            {
+                // Fail the host start. A stream trigger with only one of the two set would otherwise either never
+                // reclaim anything or claim an entry the moment it is pending, while its function is still running.
+                throw new InvalidOperationException($"{nameof(RedisOptions.StreamClaimMinIdleTimeInMs)} and {nameof(RedisOptions.StreamMaxDeliveryCount)} must both be greater than 0 to reclaim idle pending stream entries or both 0 to leave them pending. Neither may be negative.");
+            }
         }
 
         /// <summary>
@@ -64,7 +74,7 @@ namespace Microsoft.Azure.WebJobs.Extensions.Redis
             listsTriggerRule.BindToTrigger(new RedisListTriggerBindingProvider(configuration, azureComponentFactory, nameResolver, loggerFactory.CreateLogger(RedisUtilities.RedisListTrigger)));
 
             FluentBindingRule<RedisStreamTriggerAttribute> streamTriggerRule = context.AddBindingRule<RedisStreamTriggerAttribute>();
-            streamTriggerRule.BindToTrigger(new RedisStreamTriggerBindingProvider(configuration, azureComponentFactory, nameResolver, loggerFactory.CreateLogger(RedisUtilities.RedisStreamTrigger)));
+            streamTriggerRule.BindToTrigger(new RedisStreamTriggerBindingProvider(configuration, azureComponentFactory, nameResolver, options, loggerFactory.CreateLogger(RedisUtilities.RedisStreamTrigger)));
 
             FluentBindingRule<RedisAttribute> bindingRule = context.AddBindingRule<RedisAttribute>();
             bindingRule.BindToCollector(new RedisAsyncCollectorAsyncConverter(configuration, azureComponentFactory, loggerFactory.CreateLogger(RedisUtilities.RedisOutputBinding)));
